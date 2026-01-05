@@ -1,6 +1,7 @@
 import React from 'react';
-import { Terminal, Code2, Book, Menu, X, ChevronDown, Lock, Unlock, Layers } from 'lucide-react';
+import { Terminal, Code2, Book, Menu, X, ChevronDown, Lock, Unlock, Layers, LogIn, User, LogOut } from 'lucide-react';
 import { JGVersion } from '../App';
+import { authService } from '../services/firebase';
 
 interface NavbarProps {
     currentView: 'home' | 'playground' | 'docs';
@@ -8,9 +9,11 @@ interface NavbarProps {
     jgVersion: JGVersion;
     setJgVersion: (v: JGVersion) => void;
     unlockedVersions: JGVersion[];
+    user: any; // Firebase User object
+    onOpenAuth: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion, setJgVersion, unlockedVersions }) => {
+export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion, setJgVersion, unlockedVersions, user, onOpenAuth }) => {
     const [isMenuOpen, setIsMenuOpen] = React.useState(false);
 
     const navItems = [
@@ -29,10 +32,15 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
         }
     };
 
-    // V1.0 is technically "locked" (paid) but has a free tier, so we handle lock icon logic carefully
     const isLocked = (v: JGVersion) => {
-        if (v === 'v1.0') return false; // V1.0 shows as available but may hit limit
+        if (v === 'v1.0') return false; 
         return !unlockedVersions.includes(v);
+    };
+
+    const handleLogout = async () => {
+        await authService.signOut();
+        setIsMenuOpen(false);
+        // Refresh page or state update handled by App.tsx subscription
     };
 
     const VersionOption = ({ v, label, price }: { v: JGVersion, label: string, price: string }) => {
@@ -126,6 +134,35 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
                                 <VersionOption v="v0" label="Version 0 Legacy" price="₹20" />
                             </div>
                         </div>
+
+                        {/* Auth Button (Desktop) */}
+                        <div className="ml-2 pl-2 border-l border-gray-700">
+                             {user ? (
+                                <div className="group relative">
+                                    <button className="flex items-center gap-2 text-sm text-gray-300 hover:text-white">
+                                        <div className="w-8 h-8 rounded-full bg-jg-primary/20 flex items-center justify-center border border-jg-primary/50">
+                                            <User className="w-4 h-4 text-jg-primary" />
+                                        </div>
+                                    </button>
+                                    <div className="absolute right-0 mt-2 w-48 bg-jg-surface border border-gray-700 rounded-md shadow-xl overflow-hidden opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 p-2">
+                                        <div className="px-2 py-1 mb-2 border-b border-gray-800">
+                                            <p className="text-xs text-white font-bold truncate">{user.displayName || 'User'}</p>
+                                            <p className="text-[10px] text-gray-500 truncate">{user.email}</p>
+                                        </div>
+                                        <button onClick={handleLogout} className="w-full text-left px-2 py-1.5 text-xs text-red-400 hover:bg-gray-800 rounded flex items-center gap-2">
+                                            <LogOut className="w-3 h-3" /> Sign Out
+                                        </button>
+                                    </div>
+                                </div>
+                             ) : (
+                                <button 
+                                    onClick={onOpenAuth}
+                                    className="flex items-center px-4 py-1.5 rounded-full bg-jg-primary hover:bg-blue-600 text-white text-xs font-bold transition-all shadow-lg shadow-blue-900/20"
+                                >
+                                    <LogIn className="w-3 h-3 mr-1.5" /> Sign In
+                                </button>
+                             )}
+                        </div>
                     </div>
 
                     {/* Mobile Menu Toggle */}
@@ -165,6 +202,28 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
                                 {item.label}
                             </button>
                         ))}
+                    </div>
+                    
+                    {/* Mobile Auth */}
+                    <div className="px-4 py-3 border-t border-gray-800">
+                        {user ? (
+                            <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-2">
+                                     <div className="w-8 h-8 rounded-full bg-jg-primary/20 flex items-center justify-center">
+                                        <User className="w-4 h-4 text-jg-primary" />
+                                    </div>
+                                    <span className="text-sm text-white">{user.displayName}</span>
+                                </div>
+                                <button onClick={handleLogout} className="text-xs text-red-400 border border-red-900/50 px-2 py-1 rounded bg-red-900/10">Sign Out</button>
+                            </div>
+                        ) : (
+                             <button 
+                                onClick={() => { setIsMenuOpen(false); onOpenAuth(); }}
+                                className="w-full py-2 bg-jg-primary text-white rounded font-bold text-sm flex items-center justify-center gap-2"
+                            >
+                                <LogIn className="w-4 h-4" /> Sign In / Sign Up
+                            </button>
+                        )}
                     </div>
 
                     {/* Mobile Version Selector */}

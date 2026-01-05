@@ -1,0 +1,32 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // --- USERS COLLECTION ---
+    // Users can read/write ONLY their own document
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // --- PAYMENT REQUESTS ---
+    // Users can create requests, Admins can read/write all
+    match /payment_requests/{requestId} {
+      // Allow creation if logged in
+      allow create: if request.auth != null;
+      // Users can read their own requests (checks if resource.data.uid matches)
+      allow read: if request.auth != null && resource.data.uid == request.auth.uid;
+    }
+
+    // --- MAIL COLLECTION (Automation) ---
+    // Allow users to create email triggers (for admin notification)
+    // Only Admin (or extension) usually needs to read these
+    match /mail/{mailId} {
+      allow create: if request.auth != null;
+    }
+    
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

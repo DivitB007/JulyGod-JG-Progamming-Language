@@ -5,6 +5,8 @@ import { Playground } from './components/Playground';
 import { Documentation } from './components/Documentation';
 import { Footer } from './components/Footer';
 import { UnlockModal } from './components/UnlockModal';
+import { AuthModal } from './components/AuthModal';
+import { authService, dbService } from './services/firebase';
 
 export type JGVersion = 'v0' | 'v0.1-remastered' | 'v1.0' | 'v1.1' | 'v1.2';
 
@@ -29,12 +31,58 @@ const AmbientBackground = () => (
 
 function App() {
   const [currentView, setView] = useState<'home' | 'playground' | 'docs'>('home');
-  // Default to V1.2 (Flagship) to showcase it, even if locked
   const [jgVersion, setJgVersion] = useState<JGVersion>('v1.2');
   
-  // Initialize Unlocked Versions (V1.2 is PAID at ₹1400, so it is NOT in this list by default)
+  // Auth State
+  const [user, setUser] = useState<any>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  
+  // Data State
   const [unlockedVersions, setUnlockedVersions] = useState<JGVersion[]>(['v0.1-remastered']);
+  const [pendingRequests, setPendingRequests] = useState<{version: JGVersion, utr: string}[]>([]);
   const [showUnlockModal, setShowUnlockModal] = useState<JGVersion | null>(null);
+
+  // Initialize Auth Listener & Real-time DB Listener
+  useEffect(() => {
+    let unsubscribeProfile: (() => void) | null = null;
+
+    const unsubscribeAuth = authService.onStateChange(async (currentUser) => {
+        setUser(currentUser);
+        
+        // Cleanup previous profile listener if exists (e.g. on logout or user switch)
+        if (unsubscribeProfile) {
+            unsubscribeProfile();
+            unsubscribeProfile = null;
+        }
+
+        if (currentUser) {
+            // Subscribe to real-time updates for automatic unlocking
+            unsubscribeProfile = dbService.subscribeToUserProfile(currentUser.uid, (profile) => {
+                if (profile) {
+                    setUnlockedVersions(profile.unlockedVersions || ['v0.1-remastered']);
+                    setPendingRequests(profile.pendingRequests || []);
+                    
+                    // Auto-close unlock modal if the requested version is now unlocked by admin
+                    setShowUnlockModal(currentModal => {
+                         if (currentModal && profile.unlockedVersions?.includes(currentModal)) {
+                             return null; // Close modal
+                         }
+                         return currentModal;
+                    });
+                }
+            });
+        } else {
+            // Reset to defaults
+            setUnlockedVersions(['v0.1-remastered']);
+            setPendingRequests([]);
+        }
+    });
+
+    return () => {
+        unsubscribeAuth();
+        if (unsubscribeProfile) unsubscribeProfile();
+    };
+  }, []);
 
   // Smooth scroll to top when view changes
   useEffect(() => {
@@ -42,34 +90,39 @@ function App() {
   }, [currentView]);
 
   const handleVersionChange = (version: JGVersion) => {
-    // We allow users to switch to any version to see it, 
-    // but the Playground component will handle the "Locked" state visualization.
     setJgVersion(version);
-    
-    // If they switch to a locked version (except v1.0 which has a free tier), we can optionally pop the modal,
-    // but a better UX is to let them see the UI and block execution in the playground.
-    if (version !== 'v1.0' && !unlockedVersions.includes(version)) {
-        // Optional: immediately prompt? No, let Playground handle the call to action.
-    }
   };
 
   const handleUnlockRequest = (version: JGVersion) => {
-      setShowUnlockModal(version);
+      if (!user) {
+          setShowAuthModal(true);
+      } else {
+          setShowUnlockModal(version);
+      }
   }
 
-  const handleUnlock = (version: JGVersion) => {
-      setUnlockedVersions(prev => [...prev, version]);
-      setJgVersion(version);
-      setShowUnlockModal(null);
+  const handlePendingSubmission = async (version: JGVersion, utr: string) => {
+      if (user) {
+          await dbService.submitPayment(user.uid, version, utr, user.displayName || 'User');
+          // Optimistic update isn't strictly necessary with onSnapshot, 
+          // but good for immediate feedback if network is slow before first snapshot update.
+          // However, we'll rely on the snapshot to keep truth simple.
+      }
+      // Note: We do NOT close the modal here. 
+      // The Modal handles the "Pending" state display based on `isPending`.
+      // The App will re-render, pass `isPending=true` to Modal, and Modal will show the "Pending" UI.
+  };
+
+  // Check if a specific version is pending approval
+  const isPending = (ver: JGVersion) => {
+      return pendingRequests.some(r => r.version === ver);
   };
 
   return (
     <div className="min-h-screen text-jg-text font-sans antialiased relative selection:bg-jg-accent selection:text-white">
       
-      {/* 1. Global Background Layer */}
       <AmbientBackground />
 
-      {/* 2. Content Layer */}
       <div className="relative z-10 flex flex-col min-h-screen">
         <Navbar 
           currentView={currentView} 
@@ -77,13 +130,23 @@ function App() {
           jgVersion={jgVersion}
           setJgVersion={handleVersionChange}
           unlockedVersions={unlockedVersions}
+          user={user}
+          onOpenAuth={() => setShowAuthModal(true)}
         />
         
+        {showAuthModal && (
+            <AuthModal 
+                onClose={() => setShowAuthModal(false)}
+                onSuccess={() => setShowAuthModal(false)}
+            />
+        )}
+
         {showUnlockModal && (
             <UnlockModal 
                 version={showUnlockModal} 
+                isPending={isPending(showUnlockModal)}
                 onClose={() => setShowUnlockModal(null)}
-                onUnlock={() => handleUnlock(showUnlockModal)}
+                onSubmitRequest={(utr) => handlePendingSubmission(showUnlockModal, utr)}
             />
         )}
 
@@ -98,7 +161,6 @@ function App() {
           )}
           
           {currentView === 'playground' && (
-             // On mobile, let content determine height. On desktop (lg), allow playground to manage full height
              <div className="animate-fade-in flex-grow flex flex-col lg:h-full">
               <Playground 
                   jgVersion={jgVersion} 
