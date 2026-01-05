@@ -7,6 +7,7 @@ import { Footer } from './components/Footer';
 import { UnlockModal } from './components/UnlockModal';
 import { AuthModal } from './components/AuthModal';
 import { authService, dbService } from './services/firebase';
+import { AlertTriangle, ExternalLink, X } from 'lucide-react';
 
 export type JGVersion = 'v0' | 'v0.1-remastered' | 'v1.0' | 'v1.1' | 'v1.2';
 
@@ -41,6 +42,9 @@ function App() {
   const [unlockedVersions, setUnlockedVersions] = useState<JGVersion[]>(['v0.1-remastered']);
   const [pendingRequests, setPendingRequests] = useState<{version: JGVersion, utr: string}[]>([]);
   const [showUnlockModal, setShowUnlockModal] = useState<JGVersion | null>(null);
+  
+  // Global System Status
+  const [dbError, setDbError] = useState<{message: string, link?: string} | null>(null);
 
   // Initialize Auth Listener & Real-time DB Listener
   useEffect(() => {
@@ -57,24 +61,42 @@ function App() {
 
         if (currentUser) {
             // Subscribe to real-time updates for automatic unlocking
-            unsubscribeProfile = dbService.subscribeToUserProfile(currentUser.uid, (profile) => {
-                if (profile) {
-                    setUnlockedVersions(profile.unlockedVersions || ['v0.1-remastered']);
-                    setPendingRequests(profile.pendingRequests || []);
-                    
-                    // Auto-close unlock modal if the requested version is now unlocked by admin
-                    setShowUnlockModal(currentModal => {
-                         if (currentModal && profile.unlockedVersions?.includes(currentModal)) {
-                             return null; // Close modal
-                         }
-                         return currentModal;
-                    });
+            unsubscribeProfile = dbService.subscribeToUserProfile(
+                currentUser.uid, 
+                (profile) => {
+                    // Success callback
+                    setDbError(null); // Clear errors on success
+                    if (profile) {
+                        setUnlockedVersions(profile.unlockedVersions || ['v0.1-remastered']);
+                        setPendingRequests(profile.pendingRequests || []);
+                        
+                        // Auto-close unlock modal if the requested version is now unlocked by admin
+                        setShowUnlockModal(currentModal => {
+                             if (currentModal && profile.unlockedVersions?.includes(currentModal)) {
+                                 return null; // Close modal
+                             }
+                             return currentModal;
+                        });
+                    }
+                },
+                (error) => {
+                    // Error callback
+                    console.error("App DB Error:", error);
+                    if (error.code === 'permission-denied' || (error.message && error.message.includes('Cloud Firestore API'))) {
+                        setDbError({
+                            message: "Firestore API is disabled. Data cannot be saved.",
+                            link: "https://console.developers.google.com/apis/api/firestore.googleapis.com/overview?project=july-god-programming-language"
+                        });
+                    } else if (error.code === 'unavailable') {
+                        setDbError({ message: "Network offline. Working in offline mode." });
+                    }
                 }
-            });
+            );
         } else {
             // Reset to defaults
             setUnlockedVersions(['v0.1-remastered']);
             setPendingRequests([]);
+            setDbError(null);
         }
     });
 
@@ -103,14 +125,19 @@ function App() {
 
   const handlePendingSubmission = async (version: JGVersion, utr: string) => {
       if (user) {
-          await dbService.submitPayment(user.uid, version, utr, user.displayName || 'User');
-          // Optimistic update isn't strictly necessary with onSnapshot, 
-          // but good for immediate feedback if network is slow before first snapshot update.
-          // However, we'll rely on the snapshot to keep truth simple.
+          try {
+              await dbService.submitPayment(user.uid, version, utr, user.displayName || 'User');
+          } catch (e: any) {
+              if (e.code === 'permission-denied' || e.message?.includes('Cloud Firestore API')) {
+                   setDbError({
+                        message: "Firestore API Disabled. Cannot submit payment.",
+                        link: "https://console.developers.google.com/apis/api/firestore.googleapis.com/overview?project=july-god-programming-language"
+                   });
+              } else {
+                  alert("Failed to submit request: " + e.message);
+              }
+          }
       }
-      // Note: We do NOT close the modal here. 
-      // The Modal handles the "Pending" state display based on `isPending`.
-      // The App will re-render, pass `isPending=true` to Modal, and Modal will show the "Pending" UI.
   };
 
   // Check if a specific version is pending approval
@@ -178,6 +205,42 @@ function App() {
         </main>
 
         <Footer />
+        
+        {/* Global System Error Banner */}
+        {dbError && (
+            <div className="fixed bottom-0 left-0 right-0 bg-red-900/95 backdrop-blur-md border-t border-red-500 p-4 z-[100] shadow-2xl animate-in slide-in-from-bottom-5 duration-300">
+                <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+                    <div className="flex items-center gap-3 text-white">
+                        <div className="p-2 bg-red-500/20 rounded-full animate-pulse">
+                            <AlertTriangle className="w-5 h-5 text-red-200" />
+                        </div>
+                        <div>
+                            <p className="font-bold text-sm md:text-base">System Alert</p>
+                            <p className="text-xs md:text-sm text-red-100">{dbError.message}</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                         {dbError.link && (
+                            <a 
+                                href={dbError.link} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="px-4 py-2 bg-white text-red-900 text-xs font-bold rounded hover:bg-gray-100 transition-colors flex items-center gap-2"
+                            >
+                                Enable API <ExternalLink className="w-3 h-3" />
+                            </a>
+                        )}
+                        <button 
+                            onClick={() => setDbError(null)}
+                            className="p-2 hover:bg-red-800 rounded-full text-red-200 hover:text-white transition-colors"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Mail, Lock, User, Loader2, AlertCircle, Database, ExternalLink } from 'lucide-react';
+import { X, Mail, Lock, User, Loader2, AlertCircle, Database, ExternalLink, ArrowRight } from 'lucide-react';
 import { authService } from '../services/firebase';
 
 interface AuthModalProps {
@@ -7,10 +7,20 @@ interface AuthModalProps {
     onSuccess: () => void;
 }
 
+interface AuthError {
+    message: string;
+    type: 'error' | 'warning';
+    action?: {
+        label: string;
+        onClick?: () => void;
+        link?: string;
+    };
+}
+
 export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
     const [isSignUp, setIsSignUp] = useState(false);
     const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<{ message: string; type: 'error' | 'warning' } | null>(null);
+    const [error, setError] = useState<AuthError | null>(null);
     
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -23,8 +33,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
 
         try {
             if (isSignUp) {
-                if (!name) throw new Error("Name is required");
-                await authService.signUp(email, password, name);
+                if (!name || !name.trim()) throw new Error("Name is required");
+                await authService.signUp(email, password, name.trim());
             } else {
                 await authService.signIn(email, password);
             }
@@ -34,16 +44,49 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
             
             let msg = "Authentication failed. Check credentials.";
             let type: 'error' | 'warning' = 'error';
+            let action = undefined;
 
-            if (err.code === 'auth/configuration-not-found') {
-                msg = "Firebase Auth is not enabled. Please go to Firebase Console > Authentication and click 'Get Started'.";
+            // 1. Custom Validation
+            if (err.message === "Name is required") {
+                msg = "Please enter a username to continue.";
+            }
+            
+            // 2. Email Already Exists -> Offer Switch to Login
+            else if (err.code === 'auth/email-already-in-use') {
+                msg = "This email is already registered.";
                 type = 'warning';
-            } else if (err.code === 'auth/operation-not-allowed') {
-                msg = "Email/Password provider is disabled. Enable it in Firebase Console > Authentication > Sign-in method.";
+                action = {
+                    label: "Switch to Sign In",
+                    onClick: () => {
+                        setIsSignUp(false);
+                        setError(null);
+                        // Optional: keep email, clear password
+                    }
+                };
+            }
+
+            // 3. Firestore API Disabled -> Link to GCP Console
+            else if (err.code === 'permission-denied' || (err.message && err.message.includes('Cloud Firestore API'))) {
+                msg = "Firestore API is disabled. You need to enable it in the Google Cloud Console.";
                 type = 'warning';
-            } else if (err.code === 'auth/email-already-in-use') {
-                msg = "That email is already taken. Try signing in.";
-            } else if (err.code === 'auth/weak-password') {
+                action = {
+                    label: "Enable Firestore API",
+                    link: "https://console.developers.google.com/apis/api/firestore.googleapis.com/overview?project=july-god-programming-language"
+                };
+            }
+            
+            // 4. Firebase Auth Not Enabled -> Link to Firebase Console
+            else if (err.code === 'auth/configuration-not-found' || err.code === 'auth/operation-not-allowed') {
+                msg = "Authentication is not enabled in Firebase Console.";
+                type = 'warning';
+                action = {
+                    label: "Enable Email/Password",
+                    link: "https://console.firebase.google.com/u/0/project/july-god-programming-language/authentication/providers"
+                };
+            }
+
+            // 5. Standard Errors
+            else if (err.code === 'auth/weak-password') {
                 msg = "Password is too weak. Use at least 6 characters.";
             } else if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
                 msg = "Invalid email or password.";
@@ -51,7 +94,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
                 msg = err.message;
             }
 
-            setError({ message: msg, type });
+            setError({ message: msg, type, action });
         } finally {
             setLoading(false);
         }
@@ -95,7 +138,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
 
                     {isSignUp && (
                         <div className="space-y-1">
-                            <label className="text-xs text-gray-400 font-medium ml-1">Username</label>
+                            <label className="text-xs text-gray-400 font-medium ml-1">Username <span className="text-red-400">*</span></label>
                             <div className="relative">
                                 <User className="absolute left-3 top-2.5 w-4 h-4 text-gray-500" />
                                 <input 
@@ -110,7 +153,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
                     )}
 
                     <div className="space-y-1">
-                        <label className="text-xs text-gray-400 font-medium ml-1">Email</label>
+                        <label className="text-xs text-gray-400 font-medium ml-1">Email <span className="text-red-400">*</span></label>
                         <div className="relative">
                             <Mail className="absolute left-3 top-2.5 w-4 h-4 text-gray-500" />
                             <input 
@@ -125,7 +168,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
                     </div>
 
                     <div className="space-y-1">
-                        <label className="text-xs text-gray-400 font-medium ml-1">Password</label>
+                        <label className="text-xs text-gray-400 font-medium ml-1">Password <span className="text-red-400">*</span></label>
                         <div className="relative">
                             <Lock className="absolute left-3 top-2.5 w-4 h-4 text-gray-500" />
                             <input 
@@ -143,16 +186,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
                         <div className={`flex items-start gap-2 text-xs p-3 rounded ${error.type === 'warning' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
                             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                             <div className="flex-1">
-                                {error.message}
-                                {error.type === 'warning' && (
-                                    <a 
-                                        href="https://console.firebase.google.com/u/0/project/july-god-programming-language/authentication" 
-                                        target="_blank" 
-                                        rel="noopener noreferrer"
-                                        className="block mt-2 font-bold underline flex items-center gap-1 hover:text-white"
-                                    >
-                                        Open Firebase Console <ExternalLink className="w-3 h-3" />
-                                    </a>
+                                <p className="leading-tight">{error.message}</p>
+                                
+                                {error.action && (
+                                    <div className="mt-2">
+                                        {error.action.link ? (
+                                             <a 
+                                                href={error.action.link}
+                                                target="_blank" 
+                                                rel="noopener noreferrer"
+                                                className="inline-flex items-center gap-1 font-bold underline hover:text-white transition-colors"
+                                             >
+                                                {error.action.label} <ExternalLink className="w-3 h-3" />
+                                             </a>
+                                        ) : (
+                                            <button 
+                                                type="button"
+                                                onClick={error.action.onClick}
+                                                className="inline-flex items-center gap-1 font-bold underline hover:text-white transition-colors"
+                                            >
+                                                {error.action.label} <ArrowRight className="w-3 h-3" />
+                                            </button>
+                                        )}
+                                    </div>
                                 )}
                             </div>
                         </div>

@@ -181,51 +181,63 @@ export const dbService = {
             return;
         }
 
-        const timestamp = serverTimestamp();
+        try {
+            const timestamp = serverTimestamp();
 
-        // 1. Add to global requests collection (For Zapier or Admin Panel)
-        await addDoc(collection(db, "payment_requests"), {
-            uid,
-            username,
-            version,
-            utr,
-            status: 'pending',
-            createdAt: timestamp
-        });
-
-        // 2. Add to 'mail' collection (For Firebase "Trigger Email" Extension)
-        // This is the "Real" email automation. If the extension is installed, 
-        // this doc creation will send an email to the admin.
-        await addDoc(collection(db, "mail"), {
-            to: ADMIN_EMAIL,
-            message: {
-                subject: `[JulyGod] New Unlock Request: ${username}`,
-                html: `
-                    <h2>New Payment Verification Needed</h2>
-                    <p><strong>User:</strong> ${username} (${uid})</p>
-                    <p><strong>Version Requested:</strong> ${version}</p>
-                    <p><strong>UTR / Ref ID:</strong> ${utr}</p>
-                    <hr/>
-                    <p>Please verify the payment in your dashboard or bank account.</p>
-                `
-            }
-        });
-
-        // 3. Add to user profile for Real-time UI updates
-        const userRef = doc(db, "users", uid);
-        await updateDoc(userRef, {
-            pendingRequests: arrayUnion({
+            // 1. Add to global requests collection (For Zapier or Admin Panel)
+            await addDoc(collection(db, "payment_requests"), {
+                uid,
+                username,
                 version,
                 utr,
-                date: new Date().toISOString()
-            })
-        });
+                status: 'pending',
+                createdAt: timestamp
+            });
 
-        if (analytics) logEvent(analytics, 'unlock_request', { version, utr });
+            // 2. Add to 'mail' collection (For Firebase "Trigger Email" Extension)
+            // This is the "Real" email automation. If the extension is installed, 
+            // this doc creation will send an email to the admin.
+            await addDoc(collection(db, "mail"), {
+                to: ADMIN_EMAIL,
+                message: {
+                    subject: `[JulyGod] New Unlock Request: ${username}`,
+                    html: `
+                        <h2>New Payment Verification Needed</h2>
+                        <p><strong>User:</strong> ${username} (${uid})</p>
+                        <p><strong>Version Requested:</strong> ${version}</p>
+                        <p><strong>UTR / Ref ID:</strong> ${utr}</p>
+                        <hr/>
+                        <p>Please verify the payment in your dashboard or bank account.</p>
+                    `
+                }
+            });
+
+            // 3. Add to user profile for Real-time UI updates
+            const userRef = doc(db, "users", uid);
+            await updateDoc(userRef, {
+                pendingRequests: arrayUnion({
+                    version,
+                    utr,
+                    date: new Date().toISOString()
+                })
+            });
+
+            if (analytics) logEvent(analytics, 'unlock_request', { version, utr });
+        } catch (error: any) {
+             if (error.code === 'permission-denied' || error.message?.includes('Cloud Firestore API')) {
+                console.error("🚨 Firestore API Error caught in submitPayment");
+                throw error; // Re-throw to be caught by UI
+            }
+            throw error;
+        }
     },
 
     // Real-time listener
-    subscribeToUserProfile: (uid: string, onUpdate: (profile: UserProfile | null) => void) => {
+    subscribeToUserProfile: (
+        uid: string, 
+        onUpdate: (profile: UserProfile | null) => void,
+        onError?: (error: any) => void
+    ) => {
         if (isDemoMode) {
             const check = () => {
                 const key = `jg_pending_${uid}`;
@@ -243,14 +255,26 @@ export const dbService = {
             return () => clearInterval(interval);
         }
 
-        // Real Firestore Listener
-        return onSnapshot(doc(db, "users", uid), (doc) => {
-            if (doc.exists()) {
-                onUpdate({ uid, ...doc.data() } as UserProfile);
-            } else {
-                onUpdate(null);
+        // Real Firestore Listener with error handling
+        return onSnapshot(
+            doc(db, "users", uid), 
+            (doc) => {
+                if (doc.exists()) {
+                    onUpdate({ uid, ...doc.data() } as UserProfile);
+                } else {
+                    onUpdate(null);
+                }
+            },
+            (error) => {
+                 if (onError) onError(error);
+
+                 if (error.code === 'permission-denied' || error.message?.includes('Cloud Firestore API')) {
+                    console.warn(`⚠️ FIRESTORE DISABLED: The Cloud Firestore API is not enabled.`);
+                } else {
+                    console.error("🔥 Firestore Listen Error:", error);
+                }
             }
-        });
+        );
     },
 
     // Legacy fetch
@@ -267,9 +291,13 @@ export const dbService = {
             };
         }
         
-        const snap = await getDoc(doc(db, "users", uid));
-        if (snap.exists()) {
-            return { uid, ...snap.data() } as UserProfile;
+        try {
+            const snap = await getDoc(doc(db, "users", uid));
+            if (snap.exists()) {
+                return { uid, ...snap.data() } as UserProfile;
+            }
+        } catch (e) {
+            console.error("🔥 Firestore Fetch Error:", e);
         }
         return null;
     }
