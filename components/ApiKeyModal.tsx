@@ -49,7 +49,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ onClose }) => {
                 <div className="p-6 space-y-6">
                     <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4 text-sm text-blue-200">
                         <p>
-                            JulyGod uses <strong>Gemini 3 Pro</strong> to intelligently transpile your code into Python. 
+                            JulyGod uses <strong>Gemini 3 Flash</strong> to intelligently transpile your code into Python. 
                             Please enter your Google Gemini API Key below.
                         </p>
                     </div>

@@ -854,8 +854,9 @@ export const transpileJGtoPython = async (input: string, version: JGVersion): Pr
 
     try {
         const ai = new GoogleGenAI({ apiKey: finalKey });
+        // Switched to 'gemini-3-flash-preview' to avoid 429 quota issues with Pro on free tier
         const response = await ai.models.generateContent({
-            model: 'gemini-3-pro-preview',
+            model: 'gemini-3-flash-preview',
             contents: `Translate the following JulyGod (JG) source code into Python 3.
             
             VERSION: ${version}
@@ -891,7 +892,10 @@ export const transpileJGtoPython = async (input: string, version: JGVersion): Pr
         text = text.replace(/^```python\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '');
         return text;
 
-    } catch (e) {
-        return `# Transpilation failed: ${e}`;
+    } catch (e: any) {
+        if (e.message && e.message.includes('429')) {
+             return `# Transpilation failed: Rate limit exceeded (429). Please try again in a few moments or use a paid API key.`;
+        }
+        return `# Transpilation failed: ${e.message || e}`;
     }
 }
