@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, CreditCard, Lock, ShieldCheck, Loader2, CheckCircle } from 'lucide-react';
+import { X, CreditCard, Lock, ShieldCheck, Loader2, CheckCircle, Wallet } from 'lucide-react';
 import { JGVersion } from '../App';
 
 interface UnlockModalProps {
@@ -40,9 +40,9 @@ export const UnlockModal: React.FC<UnlockModalProps> = ({ version, onClose, onUn
         }
     };
 
-    const handleStripePayment = () => {
+    const handlePurchase = () => {
         setIsProcessing(true);
-        // Simulate Stripe Payment Delay
+        // Simulate Generic Payment Gateway Delay
         setTimeout(() => {
             setIsProcessing(false);
             handleSuccess();
@@ -96,18 +96,18 @@ export const UnlockModal: React.FC<UnlockModalProps> = ({ version, onClose, onUn
                         </div>
                     </div>
 
-                    {/* Stripe Button */}
+                    {/* Generic Payment Button (No Stripe Branding) */}
                     <button 
-                        onClick={handleStripePayment}
+                        onClick={handlePurchase}
                         disabled={isProcessing}
-                        className="w-full py-3 px-4 bg-[#635BFF] hover:bg-[#5851df] text-white font-semibold rounded-lg shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02]"
+                        className="w-full py-3 px-4 bg-gradient-to-r from-jg-primary to-jg-accent hover:from-blue-600 hover:to-violet-600 text-white font-semibold rounded-lg shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02]"
                     >
                         {isProcessing ? (
                             <Loader2 className="w-5 h-5 animate-spin" />
                         ) : (
-                            <CreditCard className="w-5 h-5" />
+                            <Wallet className="w-5 h-5" />
                         )}
-                        {isProcessing ? 'Processing...' : 'Pay with Stripe'}
+                        {isProcessing ? 'Processing...' : 'Complete Purchase'}
                     </button>
 
                     <div className="relative flex items-center py-2">
