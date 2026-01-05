@@ -843,12 +843,17 @@ export const executeJG = (input: string, version: JGVersion = 'v0', stdIn: strin
 };
 
 export const transpileJGtoPython = async (input: string, version: JGVersion): Promise<string> => {
-    if (!process.env.API_KEY) {
-        return "# API Key Missing. AI Transpilation Unavailable.";
+    // Check localStorage first, then environment variable
+    const storedKey = localStorage.getItem('jg_gemini_api_key');
+    const envKey = process.env.API_KEY;
+    const finalKey = storedKey || envKey;
+
+    if (!finalKey) {
+        return "# API Key Missing. Please configure it in the 'Setup AI' menu.";
     }
 
     try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const ai = new GoogleGenAI({ apiKey: finalKey });
         const response = await ai.models.generateContent({
             model: 'gemini-3-pro-preview',
             contents: `Translate the following JulyGod (JG) source code into Python 3.

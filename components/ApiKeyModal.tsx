@@ -1,40 +1,32 @@
 import React, { useState, useEffect } from 'react';
-import { X, Key, ExternalLink, CheckCircle, Loader2, Zap } from 'lucide-react';
+import { X, Key, ExternalLink, CheckCircle, Save, Zap, Trash2 } from 'lucide-react';
 
 interface ApiKeyModalProps {
     onClose: () => void;
 }
 
 export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ onClose }) => {
-    const [hasKey, setHasKey] = useState(false);
-    const [loading, setLoading] = useState(false);
+    const [apiKey, setApiKey] = useState('');
+    const [savedKey, setSavedKey] = useState('');
 
     useEffect(() => {
-        checkKey();
+        const stored = localStorage.getItem('jg_gemini_api_key');
+        if (stored) {
+            setSavedKey(stored);
+            setApiKey(stored);
+        }
     }, []);
 
-    const checkKey = async () => {
-        if ((window as any).aistudio?.hasSelectedApiKey) {
-            const has = await (window as any).aistudio.hasSelectedApiKey();
-            setHasKey(has);
-        }
+    const handleSave = () => {
+        if (!apiKey.trim()) return;
+        localStorage.setItem('jg_gemini_api_key', apiKey.trim());
+        setSavedKey(apiKey.trim());
     };
 
-    const handleSelectKey = async () => {
-        setLoading(true);
-        try {
-            if ((window as any).aistudio?.openSelectKey) {
-                await (window as any).aistudio.openSelectKey();
-                // Assume success after interaction (mitigates race condition)
-                setHasKey(true);
-            } else {
-                console.warn("AI Studio interface not found");
-            }
-        } catch (e) {
-            console.error("Failed to select key:", e);
-        } finally {
-            setLoading(false);
-        }
+    const handleClear = () => {
+        localStorage.removeItem('jg_gemini_api_key');
+        setSavedKey('');
+        setApiKey('');
     };
 
     return (
@@ -58,48 +50,62 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ onClose }) => {
                     <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4 text-sm text-blue-200">
                         <p>
                             JulyGod uses <strong>Gemini 3 Pro</strong> to intelligently transpile your code into Python. 
-                            You need to connect your Google Cloud Project to enable this feature.
+                            Please enter your Google Gemini API Key below.
                         </p>
                     </div>
 
                     <div className="space-y-4">
-                        <h4 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">How to connect:</h4>
-                        <ol className="list-decimal list-inside text-gray-400 space-y-2 text-sm">
-                            <li>Click the <strong>Select API Key</strong> button below.</li>
-                            <li>Choose a Google Cloud Project with billing enabled.</li>
-                            <li>Wait for the confirmation.</li>
-                        </ol>
+                         <div>
+                            <label className="block text-xs font-medium text-gray-400 mb-1">API KEY</label>
+                            <input
+                                type="password"
+                                value={apiKey}
+                                onChange={(e) => setApiKey(e.target.value)}
+                                placeholder="AIzaSy..."
+                                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-jg-primary focus:border-transparent transition-all font-mono text-sm"
+                            />
+                        </div>
                     </div>
 
-                    <div className="pt-2">
-                        {hasKey ? (
-                            <button 
-                                disabled
-                                className="w-full py-3 px-4 bg-green-500/20 border border-green-500/50 text-green-400 font-semibold rounded-lg flex items-center justify-center gap-2 cursor-default"
+                    <div className="pt-2 flex gap-3">
+                        {savedKey ? (
+                             <button 
+                                onClick={handleClear}
+                                className="flex-1 py-3 px-4 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 font-semibold rounded-lg flex items-center justify-center gap-2 transition-all"
                             >
-                                <CheckCircle className="w-5 h-5" />
-                                API Key Configured
+                                <Trash2 className="w-4 h-4" /> Remove
                             </button>
-                        ) : (
-                            <button 
-                                onClick={handleSelectKey}
-                                disabled={loading}
-                                className="w-full py-3 px-4 bg-jg-primary hover:bg-blue-600 text-white font-semibold rounded-lg shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02]"
-                            >
-                                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Key className="w-5 h-5" />}
-                                {loading ? 'Waiting for selection...' : 'Select API Key'}
-                            </button>
-                        )}
+                        ) : null}
+                        
+                        <button 
+                            onClick={handleSave}
+                            disabled={!apiKey.trim() || apiKey === savedKey}
+                            className={`flex-1 py-3 px-4 font-semibold rounded-lg flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02] shadow-lg ${
+                                savedKey && apiKey === savedKey 
+                                ? 'bg-green-500/20 border border-green-500/50 text-green-400 cursor-default shadow-none hover:scale-100' 
+                                : 'bg-jg-primary hover:bg-blue-600 text-white shadow-blue-500/20'
+                            }`}
+                        >
+                            {savedKey && apiKey === savedKey ? (
+                                <>
+                                    <CheckCircle className="w-5 h-5" /> Saved
+                                </>
+                            ) : (
+                                <>
+                                    <Save className="w-5 h-5" /> Save Key
+                                </>
+                            )}
+                        </button>
                     </div>
 
                     <div className="text-center">
                         <a 
-                            href="https://ai.google.dev/gemini-api/docs/billing" 
+                            href="https://aistudio.google.com/app/apikey" 
                             target="_blank" 
                             rel="noopener noreferrer"
                             className="text-xs text-gray-500 hover:text-jg-primary flex items-center justify-center gap-1 transition-colors"
                         >
-                            Learn about Gemini API billing <ExternalLink className="w-3 h-3" />
+                            Get a free API key from Google AI Studio <ExternalLink className="w-3 h-3" />
                         </a>
                     </div>
                 </div>

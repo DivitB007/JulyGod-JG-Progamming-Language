@@ -1,5 +1,5 @@
 import React from 'react';
-import { Terminal, Code2, Book, Menu, X, ChevronDown, Lock, Unlock } from 'lucide-react';
+import { Terminal, Code2, Book, Menu, X, ChevronDown, Lock, Unlock, Layers } from 'lucide-react';
 import { JGVersion } from '../App';
 
 interface NavbarProps {
@@ -40,9 +40,12 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
         const active = jgVersion === v;
         return (
             <button 
-                onClick={() => setJgVersion(v)}
+                onClick={() => {
+                    setJgVersion(v);
+                    setIsMenuOpen(false);
+                }}
                 className={`w-full text-left px-4 py-3 text-sm flex items-center justify-between group transition-colors ${
-                    active ? 'bg-gray-800' : 'hover:bg-gray-700'
+                    active ? 'bg-gray-800' : 'hover:bg-gray-700 bg-transparent'
                 }`}
             >
                 <div className="flex flex-col">
@@ -67,18 +70,18 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
     };
 
     return (
-        <nav className="fixed top-0 left-0 right-0 z-50 bg-jg-dark/90 backdrop-blur-md border-b border-jg-surface">
+        <nav className="fixed top-0 left-0 right-0 z-50 bg-jg-dark/95 backdrop-blur-xl border-b border-jg-surface">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex items-center justify-between h-16">
                     {/* Logo */}
                     <div 
-                        className="flex-shrink-0 flex items-center cursor-pointer group"
+                        className="flex-shrink-0 flex items-center cursor-pointer group select-none"
                         onClick={() => setView('home')}
                     >
-                        <div className="w-10 h-10 bg-gradient-to-br from-jg-primary to-jg-accent rounded-lg flex items-center justify-center text-white font-bold text-xl shadow-lg group-hover:scale-105 transition-transform duration-200">
+                        <div className="w-9 h-9 md:w-10 md:h-10 bg-gradient-to-br from-jg-primary to-jg-accent rounded-lg flex items-center justify-center text-white font-bold text-lg md:text-xl shadow-lg group-hover:scale-105 transition-transform duration-200">
                             JG
                         </div>
-                        <span className="ml-3 text-xl font-bold tracking-tight text-white group-hover:text-jg-primary transition-colors">
+                        <span className="ml-3 text-lg md:text-xl font-bold tracking-tight text-white group-hover:text-jg-primary transition-colors">
                             JulyGod
                         </span>
                     </div>
@@ -102,7 +105,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
                             ))}
                         </div>
 
-                        {/* Version Selector */}
+                        {/* Desktop Version Selector */}
                         <div className="relative group ml-4">
                             <button className="flex items-center space-x-2 bg-gray-800 hover:bg-gray-700 px-3 py-1.5 rounded-full text-xs font-mono border border-gray-600 transition-colors">
                                 <span className={
@@ -115,8 +118,8 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
                                 </span>
                                 <ChevronDown className="w-3 h-3 text-gray-400" />
                             </button>
-                            <div className="absolute right-0 mt-2 w-64 bg-jg-surface border border-gray-700 rounded-md shadow-xl overflow-hidden opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 transform origin-top-right ring-1 ring-black ring-opacity-5">
-                                <VersionOption v="v1.2" label="V1.2 Final (Types)" price="₹1400" />
+                            <div className="absolute right-0 mt-2 w-64 bg-jg-surface border border-gray-700 rounded-md shadow-xl overflow-hidden opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 transform origin-top-right ring-1 ring-black ring-opacity-5 z-50">
+                                <VersionOption v="v1.2" label="V1.2 Final (Types)" price="₹1400 Flagship" />
                                 <VersionOption v="v1.1" label="V1.1 Interactive" price="₹800" />
                                 <VersionOption v="v1.0" label="V1.0 Stable" price="3 Free/Day" />
                                 <VersionOption v="v0.1-remastered" label="V0.1 Remastered" price="Free" />
@@ -125,16 +128,14 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
                         </div>
                     </div>
 
-                    {/* Mobile menu button */}
-                    <div className="md:hidden flex items-center space-x-4">
-                         <button 
-                            className="text-xs font-mono bg-gray-800 px-2 py-1 rounded border border-gray-600 text-blue-400"
-                         >
+                    {/* Mobile Menu Toggle */}
+                    <div className="md:hidden flex items-center space-x-3">
+                         <div className="text-[10px] font-mono bg-gray-800 px-2 py-1 rounded border border-gray-700 text-gray-400">
                             {getDisplayVersion(jgVersion)}
-                        </button>
+                        </div>
                         <button
                             onClick={() => setIsMenuOpen(!isMenuOpen)}
-                            className="inline-flex items-center justify-center p-2 rounded-md text-jg-muted hover:text-white hover:bg-jg-surface focus:outline-none"
+                            className="inline-flex items-center justify-center p-2 rounded-md text-jg-muted hover:text-white hover:bg-jg-surface focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white transition-colors"
                         >
                             {isMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
                         </button>
@@ -142,10 +143,11 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
                 </div>
             </div>
 
-            {/* Mobile Menu */}
+            {/* Mobile Menu Dropdown */}
             {isMenuOpen && (
-                <div className="md:hidden bg-jg-surface border-b border-gray-700">
+                <div className="md:hidden bg-jg-dark/95 backdrop-blur-xl border-b border-gray-800 absolute w-full z-50 animate-in slide-in-from-top-2 duration-200">
                     <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+                        {/* Nav Links */}
                         {navItems.map((item) => (
                             <button
                                 key={item.id}
@@ -153,16 +155,29 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
                                     setView(item.id);
                                     setIsMenuOpen(false);
                                 }}
-                                className={`flex items-center w-full px-3 py-2 rounded-md text-base font-medium ${
+                                className={`flex items-center w-full px-4 py-3 rounded-md text-base font-medium ${
                                     currentView === item.id
-                                        ? 'bg-jg-dark text-jg-primary'
-                                        : 'text-jg-muted hover:text-white hover:bg-jg-dark'
+                                        ? 'bg-jg-surface text-jg-primary border border-gray-700'
+                                        : 'text-jg-muted hover:text-white hover:bg-jg-surface'
                                 }`}
                             >
-                                <item.icon className="w-4 h-4 mr-2" />
+                                <item.icon className="w-5 h-5 mr-3" />
                                 {item.label}
                             </button>
                         ))}
+                    </div>
+
+                    {/* Mobile Version Selector */}
+                    <div className="border-t border-gray-800 p-2">
+                        <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-2">
+                            <Layers className="w-3 h-3" /> Select Version
+                        </div>
+                        <div className="space-y-1">
+                            <VersionOption v="v1.2" label="V1.2 Final" price="₹1400 Flagship" />
+                            <VersionOption v="v1.1" label="V1.1 Interactive" price="₹800" />
+                            <VersionOption v="v1.0" label="V1.0 Stable" price="3 Free/Day" />
+                            <VersionOption v="v0.1-remastered" label="V0.1 Remastered" price="Free" />
+                        </div>
                     </div>
                 </div>
             )}

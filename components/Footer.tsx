@@ -10,7 +10,7 @@ export const Footer: React.FC = () => {
                 </div>
                 <div className="flex flex-col items-end">
                     <p className="text-sm text-gray-500">&copy; {new Date().getFullYear()} JG Language Project.</p>
-                    <p className="text-xs text-gray-600 mt-1">Version 0 Specification</p>
+                    <p className="text-xs text-gray-600 mt-1">Version 1.2 Specification (Flagship)</p>
                 </div>
             </div>
         </footer>
