@@ -456,6 +456,49 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
               continue;
           }
 
+          // --- Object Creation ---
+          // MOVED UP: Must check before generic assignment because generic assignment matches 'p = ...' and crashes on 'new'
+          const newMatch = (version !== 'v0' && version !== 'v0.1-remastered') ? line.match(/^(final\s+)?([a-zA-Z_]\w*)\s*=\s*new\s+([a-zA-Z_]\w*)(?:\s+takes\s+(.+))?$/) : null;
+          if (newMatch) {
+               const name = newMatch[2];
+               const clsName = newMatch[3];
+               const argsRaw = newMatch[4];
+
+               const cls = classes.get(clsName);
+               if (!cls) { logError("Reference", currentLineNum, `Class '${clsName}' not found.`, "Check spelling or define the class."); return "__ERR__"; }
+
+               const newObj: JGInstance = { className: clsName, properties: {}, id: generateId() };
+               
+               let ptr: ClassDef | undefined | null = cls;
+               while(ptr) {
+                   ptr.properties.forEach((_, k) => newObj.properties[k] = null);
+                   if (!ptr.parent) break;
+                   ptr = classes.get(ptr.parent);
+               }
+
+               const initMethod = findMethod(clsName, 'init');
+               if (initMethod) {
+                   const argVals = argsRaw ? await Promise.all(argsRaw.split(/\sand\s/).map(a => evaluateExpressionAsync(a.trim(), scopeStack, version, instanceCtx, loadedLibraries))) : [];
+                   
+                   if (argVals.length !== initMethod.params.length) {
+                       logError("Type", currentLineNum, `Constructor expects ${initMethod.params.length} arguments, got ${argVals.length}.`, "Check 'takes' clause.");
+                       return "__ERR__";
+                   }
+
+                   const localScope = new Map<string, Variable>();
+                   initMethod.params.forEach((p, idx) => localScope.set(p, { name: p, value: argVals[idx], isFinal: false, type: 'any', lineDeclared: -1 }));
+                   
+                   scopeStack.push(localScope);
+                   callStackDepth++;
+                   await runLines(initMethod.codeLines, localScope, newObj, initMethod.startLine + 1);
+                   callStackDepth--;
+                   scopeStack.pop();
+               }
+
+               currentScope.set(name, { name, value: newObj, isFinal: !!newMatch[1], type: 'object', lineDeclared: currentLineNum });
+               continue;
+          }
+
           // --- Variable Assignment / Declaration ---
           // Updated regex to support optional types: final? (type)? name = value
           if (!line.startsWith('when') && !line.startsWith('set') && line.includes('=')) {
@@ -553,48 +596,6 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
                   }
                   continue;
               }
-          }
-
-          // --- Object Creation ---
-          const newMatch = (version !== 'v0' && version !== 'v0.1-remastered') ? line.match(/^(final\s+)?([a-zA-Z_]\w*)\s*=\s*new\s+([a-zA-Z_]\w*)(?:\s+takes\s+(.+))?$/) : null;
-          if (newMatch) {
-               const name = newMatch[2];
-               const clsName = newMatch[3];
-               const argsRaw = newMatch[4];
-
-               const cls = classes.get(clsName);
-               if (!cls) { logError("Reference", currentLineNum, `Class '${clsName}' not found.`, "Check spelling or define the class."); return "__ERR__"; }
-
-               const newObj: JGInstance = { className: clsName, properties: {}, id: generateId() };
-               
-               let ptr: ClassDef | undefined | null = cls;
-               while(ptr) {
-                   ptr.properties.forEach((_, k) => newObj.properties[k] = null);
-                   if (!ptr.parent) break;
-                   ptr = classes.get(ptr.parent);
-               }
-
-               const initMethod = findMethod(clsName, 'init');
-               if (initMethod) {
-                   const argVals = argsRaw ? await Promise.all(argsRaw.split(/\sand\s/).map(a => evaluateExpressionAsync(a.trim(), scopeStack, version, instanceCtx, loadedLibraries))) : [];
-                   
-                   if (argVals.length !== initMethod.params.length) {
-                       logError("Type", currentLineNum, `Constructor expects ${initMethod.params.length} arguments, got ${argVals.length}.`, "Check 'takes' clause.");
-                       return "__ERR__";
-                   }
-
-                   const localScope = new Map<string, Variable>();
-                   initMethod.params.forEach((p, idx) => localScope.set(p, { name: p, value: argVals[idx], isFinal: false, type: 'any', lineDeclared: -1 }));
-                   
-                   scopeStack.push(localScope);
-                   callStackDepth++;
-                   await runLines(initMethod.codeLines, localScope, newObj, initMethod.startLine + 1);
-                   callStackDepth--;
-                   scopeStack.pop();
-               }
-
-               currentScope.set(name, { name, value: newObj, isFinal: !!newMatch[1], type: 'object', lineDeclared: currentLineNum });
-               continue;
           }
 
           // --- Method Call ---
