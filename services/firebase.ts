@@ -19,7 +19,9 @@ import {
     arrayUnion,
     collection,
     addDoc,
-    serverTimestamp
+    serverTimestamp,
+    DocumentSnapshot,
+    FirestoreError
 } from "firebase/firestore";
 
 // Define locally to avoid circular dependency with App.tsx
@@ -258,14 +260,14 @@ export const dbService = {
         // Real Firestore Listener with error handling
         return onSnapshot(
             doc(db, "users", uid), 
-            (doc) => {
+            (doc: DocumentSnapshot) => {
                 if (doc.exists()) {
                     onUpdate({ uid, ...doc.data() } as UserProfile);
                 } else {
                     onUpdate(null);
                 }
             },
-            (error) => {
+            (error: FirestoreError) => {
                  if (onError) onError(error);
 
                  if (error.code === 'permission-denied' || error.message?.includes('Cloud Firestore API')) {
