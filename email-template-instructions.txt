@@ -1,0 +1,107 @@
+COPY AND PASTE THE FOLLOWING HTML INTO YOUR EMAILJS TEMPLATE EDITOR (HTML Tab):
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #020617; color: #f8fafc; margin: 0; padding: 0; }
+        .wrapper { width: 100%; table-layout: fixed; background-color: #020617; padding-bottom: 40px; }
+        .main { background-color: #0f172a; margin: 0 auto; width: 100%; max-width: 600px; border-spacing: 0; font-family: sans-serif; color: #f8fafc; border: 1px solid #1e293b; border-radius: 16px; overflow: hidden; }
+        .header { background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%); padding: 40px 20px; text-align: center; }
+        .header h1 { margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -1px; color: #ffffff; text-transform: uppercase; }
+        .header p { margin: 10px 0 0; color: rgba(255,255,255,0.8); font-size: 14px; font-weight: 500; }
+        
+        .content { padding: 30px; }
+        .section-title { font-size: 12px; font-weight: 800; color: #3b82f6; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 15px; border-bottom: 1px solid #1e293b; padding-bottom: 5px; }
+        
+        .data-table { width: 100%; margin-bottom: 25px; border-collapse: collapse; }
+        .data-row td { padding: 12px 0; border-bottom: 1px solid #1e293b; }
+        .label { font-size: 13px; color: #94a3b8; width: 40%; }
+        .value { font-size: 14px; color: #f8fafc; font-weight: 600; text-align: right; }
+        .mono { font-family: 'JetBrains Mono', 'Courier New', monospace; background: #020617; padding: 2px 6px; border-radius: 4px; font-size: 13px; color: #3b82f6; }
+        
+        .utr-highlight { background-color: #020617; border: 1px solid #334155; border-radius: 12px; padding: 20px; text-align: center; margin: 20px 0; }
+        .utr-label { font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 8px; }
+        .utr-code { font-size: 24px; font-weight: 800; color: #ffffff; letter-spacing: 2px; }
+        
+        .actions { margin-top: 35px; text-align: center; }
+        .btn { display: inline-block; padding: 16px 30px; border-radius: 12px; font-size: 15px; font-weight: 700; text-decoration: none; transition: all 0.2s; margin: 10px; min-width: 200px; }
+        .btn-approve { background-color: #3b82f6; color: #ffffff; border: 1px solid #60a5fa; box-shadow: 0 4px 14px 0 rgba(59, 130, 246, 0.39); }
+        .btn-deny { background-color: #ef4444; color: #ffffff; border: 1px solid #f87171; box-shadow: 0 4px 14px 0 rgba(239, 68, 68, 0.39); }
+        
+        .footer { background-color: #020617; padding: 30px; text-align: center; border-top: 1px solid #1e293b; }
+        .footer p { margin: 5px 0; font-size: 11px; color: #475569; line-height: 1.6; }
+        .uid-tag { display: inline-block; background: #1e293b; padding: 2px 8px; border-radius: 4px; color: #94a3b8; margin-top: 10px; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <table class="main">
+            <tr>
+                <td class="header">
+                    <h1>JulyGod Admin</h1>
+                    <p>New Access Request Verification</p>
+                </td>
+            </tr>
+            <tr>
+                <td class="content">
+                    <div class="section-title">Customer Details</div>
+                    <table class="data-table">
+                        <tr class="data-row">
+                            <td class="label">Name</td>
+                            <td class="value">{{username}}</td>
+                        </tr>
+                        <tr class="data-row">
+                            <td class="label">Email Address</td>
+                            <td class="value">{{user_email}}</td>
+                        </tr>
+                        <tr class="data-row">
+                            <td class="label">Requested Version</td>
+                            <td class="value"><span style="color: #8b5cf6;">JG {{version}}</span></td>
+                        </tr>
+                        <tr class="data-row">
+                            <td class="label">Price Amount</td>
+                            <td class="value" style="color: #22c55e;">₹{{price}}</td>
+                        </tr>
+                        <tr class="data-row">
+                            <td class="label">Request Date</td>
+                            <td class="value">{{date}}</td>
+                        </tr>
+                    </table>
+
+                    <div class="section-title">Transaction Information</div>
+                    <div class="utr-highlight">
+                        <div class="utr-label">Bank Reference / UTR Number</div>
+                        <div class="utr-code">{{utr}}</div>
+                    </div>
+
+                    <table class="data-table" style="margin-top: 20px;">
+                        <tr class="data-row">
+                            <td class="label">System Redeem Code</td>
+                            <td class="value"><span class="mono">{{redeem_code}}</span></td>
+                        </tr>
+                    </table>
+
+                    <div class="actions">
+                        <a href="{{unlock_url}}" class="btn btn-approve">APPROVE PAYMENT</a>
+                        <br>
+                        <a href="{{deny_url}}" class="btn btn-deny">DECLARE AS FAKE</a>
+                    </div>
+                    
+                    <p style="text-align: center; color: #64748b; font-size: 11px; margin-top: 20px; font-style: italic;">
+                        * Denying will instantly notify the user and clear the pending request from their dashboard.
+                    </p>
+                </td>
+            </tr>
+            <tr>
+                <td class="footer">
+                    <p>This is an automated administrative notification from the JulyGod Firebase Cloud Environment.</p>
+                    <p>© 2024 JulyGod Ecosystem. All rights reserved.</p>
+                    <div class="uid-tag">UID: {{uid}}</div>
+                </td>
+            </tr>
+        </table>
+    </div>
+</body>
+</html>

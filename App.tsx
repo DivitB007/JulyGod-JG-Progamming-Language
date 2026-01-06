@@ -7,7 +7,7 @@ import { Footer } from './components/Footer';
 import { UnlockModal } from './components/UnlockModal';
 import { AuthModal } from './components/AuthModal';
 import { authService, dbService, UserProfile } from './services/firebase';
-import { AlertTriangle, ExternalLink, X, ShieldAlert, Loader2, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, ExternalLink, X, ShieldAlert, Loader2, CheckCircle2, ShieldCheck, MailWarning, Trash2 } from 'lucide-react';
 
 export type JGVersion = 'v0' | 'v0.1-remastered' | 'v1.0' | 'v1.1' | 'v1.2';
 const ADMIN_EMAIL = "Divitbansal016@gmail.com";
@@ -33,7 +33,7 @@ function App() {
   const [pendingRequests, setPendingRequests] = useState<{version: JGVersion, utr: string}[]>([]);
   const [showUnlockModal, setShowUnlockModal] = useState<JGVersion | null>(null);
   
-  const [adminTask, setAdminTask] = useState<{status: 'idle'|'processing'|'success'|'error', message: string}>({ status: 'idle', message: '' });
+  const [adminTask, setAdminTask] = useState<{status: 'idle'|'processing'|'success'|'error', message: string, type?: 'unlock'|'deny'}>({ status: 'idle', message: '' });
   const hasProcessedRef = useRef(false);
 
   const [dbError, setDbError] = useState<{message: string, link?: string, type?: 'error'|'warning'|'rules'} | null>(null);
@@ -74,7 +74,6 @@ function App() {
     return () => { unsubscribeAuth(); if (unsubscribeProfile) unsubscribeProfile(); };
   }, []);
 
-  // Compute Unlocked Status - Direct check to ensure no memoization staleness
   const checkIsUnlocked = (v: JGVersion) => {
       if (v === 'v1.0' || v === 'v0.1-remastered') return true;
       if (unlockedVersions.includes(v)) return true;
@@ -85,40 +84,49 @@ function App() {
       return false;
   };
 
-  // Remote Unlock Logic for Admin
   useEffect(() => {
     const handleUrlAction = async () => {
       const queryParams = new URLSearchParams(window.location.search);
       const hash = window.location.hash;
       const hashParams = new URLSearchParams(hash.includes('?') ? hash.split('?')[1] : '');
-      const action = queryParams.get('action') || (hash.includes('unlock') ? 'unlock' : null);
+      const action = queryParams.get('action') || (hash.includes('action=') ? hash.split('action=')[1].split('&')[0] : null);
       const targetUid = queryParams.get('target_uid') || hashParams.get('target_uid');
       const targetVer = (queryParams.get('target_ver') || hashParams.get('target_ver')) as JGVersion;
 
-      if (action === 'unlock' && targetUid && targetVer && !hasProcessedRef.current) {
+      if ((action === 'unlock' || action === 'deny') && targetUid && targetVer && !hasProcessedRef.current) {
         if (!user) {
-          setAdminTask({ status: 'error', message: 'Admin login required to approve payment.' });
+          setAdminTask({ status: 'error', message: 'Admin login required to process request.' });
           setShowAuthModal(true);
           return;
         }
         if (user.email !== ADMIN_EMAIL) {
-          setAdminTask({ status: 'error', message: 'Access Denied: Only Divit can unlock users.' });
+          setAdminTask({ status: 'error', message: 'Access Denied: Only Admin can manage payments.' });
           return;
         }
 
         hasProcessedRef.current = true;
-        setAdminTask({ status: 'processing', message: `Verifying payment and unlocking ${targetVer.toUpperCase()}...` });
+        setAdminTask({ 
+            status: 'processing', 
+            message: action === 'unlock' ? `Unlocking ${targetVer.toUpperCase()}...` : `Flagging ${targetVer.toUpperCase()} as fake...`,
+            type: action as 'unlock' | 'deny'
+        });
         
         try {
-          await dbService.adminUnlockVersion(user.uid, targetUid, targetVer);
-          setAdminTask({ status: 'success', message: `Payment Approved! User unlocked.` });
+          if (action === 'unlock') {
+              await dbService.adminUnlockVersion(user.uid, targetUid, targetVer);
+              setAdminTask({ status: 'success', message: `Request Approved! Access granted.`, type: 'unlock' });
+          } else {
+              await dbService.adminDenyVersion(user.uid, targetUid, targetVer);
+              setAdminTask({ status: 'success', message: `Request Denied! Transaction marked as fake.`, type: 'deny' });
+          }
+          
           setTimeout(() => {
              window.history.replaceState({}, document.title, window.location.pathname);
              setAdminTask({ status: 'idle', message: '' });
              hasProcessedRef.current = false;
           }, 8000);
         } catch (e: any) {
-          console.error("Unlock error:", e);
+          console.error("Admin action error:", e);
           setAdminTask({ status: 'error', message: `Critical Failure: ${e.message}` });
           hasProcessedRef.current = false;
         }
@@ -131,15 +139,18 @@ function App() {
     <div className="min-h-screen text-jg-text font-sans antialiased relative selection:bg-jg-accent selection:text-white">
       <AmbientBackground />
 
+      {/* Admin Task Overlay */}
       {adminTask.status !== 'idle' && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-3xl animate-in fade-in duration-300">
             <div className={`p-12 rounded-[2rem] border-2 flex flex-col items-center gap-8 max-w-sm text-center shadow-2xl ${
-                adminTask.status === 'success' ? 'bg-green-950/50 border-green-500/50 text-green-400' :
+                adminTask.status === 'success' && adminTask.type === 'unlock' ? 'bg-green-950/50 border-green-500/50 text-green-400' :
+                adminTask.status === 'success' && adminTask.type === 'deny' ? 'bg-orange-950/50 border-orange-500/50 text-orange-400' :
                 adminTask.status === 'error' ? 'bg-red-950/50 border-red-500/50 text-red-400' :
                 'bg-jg-surface border-jg-primary/50 text-white'
             }`}>
                 {adminTask.status === 'processing' && <Loader2 className="w-20 h-20 animate-spin text-jg-primary" />}
-                {adminTask.status === 'success' && <ShieldCheck className="w-20 h-20 text-green-500" />}
+                {adminTask.status === 'success' && adminTask.type === 'unlock' && <ShieldCheck className="w-20 h-20 text-green-500" />}
+                {adminTask.status === 'success' && adminTask.type === 'deny' && <Trash2 className="w-20 h-20 text-orange-500" />}
                 {adminTask.status === 'error' && <AlertTriangle className="w-20 h-20 text-red-500" />}
                 
                 <div className="space-y-3">
@@ -155,12 +166,28 @@ function App() {
                         Close Console
                     </button>
                 )}
-                
-                {adminTask.status === 'success' && (
-                    <div className="flex items-center gap-2 text-xs font-mono text-green-500/60 animate-pulse">
-                        <CheckCircle2 className="w-3 h-3" /> Database Synced
-                    </div>
-                )}
+            </div>
+        </div>
+      )}
+
+      {/* System Notification Overlay for Users */}
+      {userProfile?.systemMessage && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] w-full max-w-md px-4 animate-in slide-in-from-top-4 duration-500">
+            <div className="bg-jg-surface border-2 border-orange-500/50 p-6 rounded-2xl shadow-2xl flex items-start gap-4">
+                <MailWarning className="w-6 h-6 text-orange-500 shrink-0" />
+                <div className="flex-1">
+                    <h4 className="text-sm font-bold text-white mb-1">System Alert</h4>
+                    <p className="text-xs text-gray-400 leading-relaxed">{userProfile.systemMessage}</p>
+                    <button 
+                        onClick={() => dbService.clearSystemMessage(user.uid)}
+                        className="mt-4 text-[10px] font-bold text-orange-400 hover:text-white uppercase tracking-wider"
+                    >
+                        Dismiss Notification
+                    </button>
+                </div>
+                <button onClick={() => dbService.clearSystemMessage(user.uid)} className="text-gray-500 hover:text-white">
+                    <X className="w-4 h-4" />
+                </button>
             </div>
         </div>
       )}

@@ -20,7 +20,8 @@ import {
     addDoc,
     serverTimestamp,
     DocumentSnapshot,
-    FirestoreError
+    FirestoreError,
+    deleteField
 } from "firebase/firestore";
 
 export type JGVersion = 'v0' | 'v0.1-remastered' | 'v1.0' | 'v1.1' | 'v1.2';
@@ -55,7 +56,8 @@ export interface UserProfile {
     email: string;
     displayName: string;
     unlockedVersions: JGVersion[];
-    trials: Record<string, string>; // Maps version to expiration ISO string
+    trials: Record<string, string>;
+    systemMessage?: string;
     pendingRequests: {
         version: JGVersion;
         utr: string;
@@ -115,9 +117,32 @@ export const dbService = {
         const updatedUnlocked = Array.from(new Set([...(userData.unlockedVersions || []), version]));
         await updateDoc(userRef, {
             unlockedVersions: updatedUnlocked,
-            pendingRequests: updatedPending
+            pendingRequests: updatedPending,
+            systemMessage: deleteField() // Clear any existing rejection messages on success
         });
         return true;
+    },
+
+    adminDenyVersion: async (adminUid: string, targetUid: string, version: JGVersion) => {
+        if (isDemoMode) throw new Error("Demo Mode");
+        const userRef = doc(db, "users", targetUid);
+        const userSnap = await getDoc(userRef);
+        if (!userSnap.exists()) throw new Error(`User not found.`);
+        const userData = userSnap.data();
+        const pending = userData.pendingRequests || [];
+        const updatedPending = pending.filter((p: any) => p.version !== version);
+        
+        await updateDoc(userRef, {
+            pendingRequests: updatedPending,
+            systemMessage: `The transaction for ${version.toUpperCase()} was marked as invalid/fake. Please contact divitbansal016@gmail.com for support.`
+        });
+        return true;
+    },
+
+    clearSystemMessage: async (uid: string) => {
+        if (isDemoMode) return;
+        const userRef = doc(db, "users", uid);
+        await updateDoc(userRef, { systemMessage: deleteField() });
     },
 
     startTrial: async (uid: string, version: JGVersion) => {
@@ -139,7 +164,6 @@ export const dbService = {
 
         const expiry = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
         
-        // Use setDoc with merge to ensure 'trials' object exists
         await setDoc(userRef, {
             trials: {
                 ...trials,
@@ -166,7 +190,8 @@ export const dbService = {
 
         await updateDoc(userRef, {
             unlockedVersions: updatedUnlocked,
-            pendingRequests: updatedPending
+            pendingRequests: updatedPending,
+            systemMessage: deleteField()
         });
         return version;
     },

@@ -1,4 +1,3 @@
-
 import emailjs from '@emailjs/browser';
 import { JGVersion } from '../App';
 import { authService } from './firebase';
@@ -17,24 +16,20 @@ interface EmailConfig {
 }
 
 export const emailService = {
-    // FIX: Retrieve stored email configuration
     getConfig: (): EmailConfig | null => {
         const stored = localStorage.getItem('jg_email_config');
         return stored ? JSON.parse(stored) : null;
     },
 
-    // FIX: Save email configuration to localStorage
     saveConfig: (config: EmailConfig) => {
         localStorage.setItem('jg_email_config', JSON.stringify(config));
         emailjs.init(config.publicKey);
     },
 
-    // FIX: Remove stored email configuration
     clearConfig: () => {
         localStorage.removeItem('jg_email_config');
     },
 
-    // FIX: Send a test email using active configuration
     sendTestEmail: async (): Promise<boolean> => {
         const config = emailService.getConfig();
         const s_id = config?.serviceId || SERVICE_ID;
@@ -54,7 +49,8 @@ export const emailService = {
                 redeem_code: "JG-TEST-0000",
                 date: new Date().toLocaleString(),
                 to_email: ADMIN_EMAIL,
-                unlock_url: `${window.location.origin}/#/unlock?target_uid=test-uid&target_ver=v1.2`
+                unlock_url: `${window.location.origin}/#/unlock?action=unlock&target_uid=test-uid&target_ver=v1.2`,
+                deny_url: `${window.location.origin}/#/unlock?action=deny&target_uid=test-uid&target_ver=v1.2`
             },
             p_key
         );
@@ -71,9 +67,9 @@ export const emailService = {
     ): Promise<boolean> => {
         const userEmail = authService.getCurrentEmail() || 'Not Provided';
         const baseUrl = window.location.origin + window.location.pathname;
-        const unlockUrl = `${baseUrl}#/unlock?target_uid=${uid}&target_ver=${version}`;
+        const unlockUrl = `${baseUrl}#/unlock?action=unlock&target_uid=${uid}&target_ver=${version}`;
+        const denyUrl = `${baseUrl}#/unlock?action=deny&target_uid=${uid}&target_ver=${version}`;
 
-        // FIX: Support dynamic configuration if set
         const config = emailService.getConfig();
         const s_id = config?.serviceId || SERVICE_ID;
         const t_id = config?.templateId || TEMPLATE_ID;
@@ -93,7 +89,8 @@ export const emailService = {
                     redeem_code: redeemCode,
                     date: new Date().toLocaleString(),
                     to_email: ADMIN_EMAIL,
-                    unlock_url: unlockUrl 
+                    unlock_url: unlockUrl,
+                    deny_url: denyUrl
                 },
                 p_key
             );
