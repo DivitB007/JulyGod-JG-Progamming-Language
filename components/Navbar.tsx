@@ -1,7 +1,7 @@
 import React from 'react';
-import { Terminal, Code2, Book, Menu, X, ChevronDown, Lock, Unlock, Layers, LogIn, User, LogOut } from 'lucide-react';
+import { Terminal, Code2, Book, Menu, X, ChevronDown, Lock, Unlock, Layers, LogIn, User, LogOut, Zap } from 'lucide-react';
 import { JGVersion } from '../App';
-import { authService } from '../services/firebase';
+import { authService, UserProfile } from '../services/firebase';
 
 interface NavbarProps {
     currentView: 'home' | 'playground' | 'docs';
@@ -9,11 +9,12 @@ interface NavbarProps {
     jgVersion: JGVersion;
     setJgVersion: (v: JGVersion) => void;
     unlockedVersions: JGVersion[];
-    user: any; // Firebase User object
+    user: any;
+    userProfile: UserProfile | null;
     onOpenAuth: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion, setJgVersion, unlockedVersions, user, onOpenAuth }) => {
+export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion, setJgVersion, unlockedVersions, user, userProfile, onOpenAuth }) => {
     const [isMenuOpen, setIsMenuOpen] = React.useState(false);
 
     const navItems = [
@@ -32,20 +33,33 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
         }
     };
 
+    const isPermanent = (v: JGVersion) => unlockedVersions.includes(v) || v === 'v1.0' || v === 'v0.1-remastered';
+
+    const getTrialRemainingDays = (v: JGVersion) => {
+        if (!userProfile?.trials?.[v]) return null;
+        const expiry = new Date(userProfile.trials[v]);
+        const diff = expiry.getTime() - new Date().getTime();
+        const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+        return days > 0 ? days : 0;
+    };
+
     const isLocked = (v: JGVersion) => {
-        if (v === 'v1.0') return false; 
-        return !unlockedVersions.includes(v);
+        if (isPermanent(v)) return false;
+        const days = getTrialRemainingDays(v);
+        return days === null || days <= 0;
     };
 
     const handleLogout = async () => {
         await authService.signOut();
         setIsMenuOpen(false);
-        // Refresh page or state update handled by App.tsx subscription
     };
 
     const VersionOption = ({ v, label, price }: { v: JGVersion, label: string, price: string }) => {
         const locked = isLocked(v);
         const active = jgVersion === v;
+        const trialDays = getTrialRemainingDays(v);
+        const owned = isPermanent(v);
+
         return (
             <button 
                 onClick={() => {
@@ -65,7 +79,19 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
                     }`}>
                         {label}
                     </span>
-                    <span className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">{price}</span>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">{price}</span>
+                        {!owned && trialDays !== null && trialDays > 0 && (
+                            <span className="text-[9px] bg-jg-primary/20 text-jg-primary px-1.5 py-0.5 rounded font-bold border border-jg-primary/30 animate-pulse">
+                                {trialDays}d TRIAL
+                            </span>
+                        )}
+                        {!owned && trialDays === 0 && (
+                            <span className="text-[9px] bg-red-500/10 text-red-400 px-1.5 py-0.5 rounded font-bold border border-red-500/30">
+                                EXPIRED
+                            </span>
+                        )}
+                    </div>
                 </div>
                 
                 {locked ? (
@@ -81,7 +107,6 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
         <nav className="fixed top-0 left-0 right-0 z-50 bg-jg-dark/95 backdrop-blur-xl border-b border-jg-surface">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex items-center justify-between h-16">
-                    {/* Logo */}
                     <div 
                         className="flex-shrink-0 flex items-center cursor-pointer group select-none"
                         onClick={() => setView('home')}
@@ -94,7 +119,6 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
                         </span>
                     </div>
 
-                    {/* Desktop Menu */}
                     <div className="hidden md:flex items-center space-x-4">
                         <div className="flex items-baseline space-x-2">
                             {navItems.map((item) => (
@@ -113,7 +137,6 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
                             ))}
                         </div>
 
-                        {/* Desktop Version Selector */}
                         <div className="relative group ml-4">
                             <button className="flex items-center space-x-2 bg-gray-800 hover:bg-gray-700 px-3 py-1.5 rounded-full text-xs font-mono border border-gray-600 transition-colors">
                                 <span className={
@@ -135,7 +158,6 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
                             </div>
                         </div>
 
-                        {/* Auth Button (Desktop) */}
                         <div className="ml-2 pl-2 border-l border-gray-700">
                              {user ? (
                                 <div className="group relative">
@@ -146,7 +168,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
                                     </button>
                                     <div className="absolute right-0 mt-2 w-48 bg-jg-surface border border-gray-700 rounded-md shadow-xl overflow-hidden opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 p-2">
                                         <div className="px-2 py-1 mb-2 border-b border-gray-800">
-                                            <p className="text-xs text-white font-bold truncate">{user.displayName || 'User'}</p>
+                                            <p className="text-xs text-white font-bold truncate">{userProfile?.displayName || user.displayName || 'User'}</p>
                                             <p className="text-[10px] text-gray-500 truncate">{user.email}</p>
                                         </div>
                                         <button onClick={handleLogout} className="w-full text-left px-2 py-1.5 text-xs text-red-400 hover:bg-gray-800 rounded flex items-center gap-2">
@@ -165,11 +187,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
                         </div>
                     </div>
 
-                    {/* Mobile Menu Toggle */}
                     <div className="md:hidden flex items-center space-x-3">
-                         <div className="text-[10px] font-mono bg-gray-800 px-2 py-1 rounded border border-gray-700 text-gray-400">
-                            {getDisplayVersion(jgVersion)}
-                        </div>
                         <button
                             onClick={() => setIsMenuOpen(!isMenuOpen)}
                             className="inline-flex items-center justify-center p-2 rounded-md text-jg-muted hover:text-white hover:bg-jg-surface focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white transition-colors"
@@ -180,11 +198,9 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
                 </div>
             </div>
 
-            {/* Mobile Menu Dropdown */}
             {isMenuOpen && (
                 <div className="md:hidden bg-jg-dark/95 backdrop-blur-xl border-b border-gray-800 absolute w-full z-50 animate-in slide-in-from-top-2 duration-200">
                     <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
-                        {/* Nav Links */}
                         {navItems.map((item) => (
                             <button
                                 key={item.id}
@@ -204,7 +220,6 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
                         ))}
                     </div>
                     
-                    {/* Mobile Auth */}
                     <div className="px-4 py-3 border-t border-gray-800">
                         {user ? (
                             <div className="flex justify-between items-center">
@@ -212,7 +227,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
                                      <div className="w-8 h-8 rounded-full bg-jg-primary/20 flex items-center justify-center">
                                         <User className="w-4 h-4 text-jg-primary" />
                                     </div>
-                                    <span className="text-sm text-white">{user.displayName}</span>
+                                    <span className="text-sm text-white">{userProfile?.displayName || user.displayName}</span>
                                 </div>
                                 <button onClick={handleLogout} className="text-xs text-red-400 border border-red-900/50 px-2 py-1 rounded bg-red-900/10">Sign Out</button>
                             </div>
@@ -226,7 +241,6 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
                         )}
                     </div>
 
-                    {/* Mobile Version Selector */}
                     <div className="border-t border-gray-800 p-2">
                         <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-2">
                             <Layers className="w-3 h-3" /> Select Version
@@ -236,6 +250,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
                             <VersionOption v="v1.1" label="V1.1 Interactive" price="₹800" />
                             <VersionOption v="v1.0" label="V1.0 Stable" price="3 Free/Day" />
                             <VersionOption v="v0.1-remastered" label="V0.1 Remastered" price="Free" />
+                            <VersionOption v="v0" label="V0 Legacy" price="₹20" />
                         </div>
                     </div>
                 </div>

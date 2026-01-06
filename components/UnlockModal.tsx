@@ -1,28 +1,30 @@
 import React, { useState } from 'react';
-import { X, Lock, ShieldCheck, CheckCircle, Smartphone, ArrowLeft, QrCode, ExternalLink, Loader2, Clock, Send, Mail, AlertCircle } from 'lucide-react';
+import { X, Lock, CheckCircle, Smartphone, ArrowLeft, Loader2, Clock, Send, Mail, AlertCircle, Key, Ticket, Zap } from 'lucide-react';
 import { JGVersion } from '../App';
-import { authService, dbService } from '../services/firebase';
+import { authService, dbService, UserProfile } from '../services/firebase';
 import { emailService } from '../services/emailService';
 
-// --- CONFIGURATION ---
-const YOUR_FAMPAY_ID = "username@fam"; 
-const YOUR_NAME = "JulyGod Admin"; 
+const YOUR_FAMPAY_ID = "divitbansal016@fam"; 
+const YOUR_NAME = "Divit Bansal"; 
 const ADMIN_EMAIL = "Divitbansal016@gmail.com";
 
 interface UnlockModalProps {
     version: JGVersion;
     isPending: boolean;
+    userProfile: UserProfile | null;
     onClose: () => void;
     onSubmitRequest: (utr: string) => Promise<void>;
 }
 
-export const UnlockModal: React.FC<UnlockModalProps> = ({ version, isPending, onClose, onSubmitRequest }) => {
+export const UnlockModal: React.FC<UnlockModalProps> = ({ version, isPending, userProfile, onClose, onSubmitRequest }) => {
     const [utr, setUtr] = useState('');
+    const [redeemCodeInput, setRedeemCodeInput] = useState('');
     const [error, setError] = useState('');
     const [step, setStep] = useState<'info' | 'payment'>('info');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isRedeeming, setIsRedeeming] = useState(false);
+    const [isTrialing, setIsTrialing] = useState(false);
     const [localSuccess, setLocalSuccess] = useState(false);
-    const [emailSent, setEmailSent] = useState(false);
 
     const getNumericPrice = () => {
         if (version === 'v0') return 20;
@@ -40,43 +42,95 @@ export const UnlockModal: React.FC<UnlockModalProps> = ({ version, isPending, on
         return '';
     };
 
-    if (isPending || localSuccess) {
-        const subject = encodeURIComponent(`[JulyGod] Payment Verification: ${getVersionName()}`);
-        const body = encodeURIComponent(`Hello Admin,\n\nI have submitted a payment request.\n\nVersion: ${getVersionName()}\nAmount: ₹${getNumericPrice()}\nUTR/Ref: ${utr || '(See Database)'}\n\nPlease verify and unlock my account.\n\nThanks.`);
-        const mailtoLink = `mailto:${ADMIN_EMAIL}?subject=${subject}&body=${body}`;
+    const getTrialText = () => {
+        if (version === 'v0') return '1 Year Trial';
+        if (version === 'v1.1') return '3 Months Trial';
+        if (version === 'v1.2') return '1 Month Trial';
+        return '';
+    }
 
+    const hasTrialed = userProfile?.trials?.[version];
+
+    const handleStartTrial = async () => {
+        setIsTrialing(true);
+        setError('');
+        try {
+            const uid = authService.getCurrentUid();
+            if (!uid) throw new Error("Login required.");
+            await dbService.startTrial(uid, version);
+            onClose();
+        } catch (err: any) {
+            setError(err.message || "Trial activation failed.");
+        } finally {
+            setIsTrialing(false);
+        }
+    };
+
+    const handleRedeem = async () => {
+        if (!redeemCodeInput.trim()) return;
+        setIsRedeeming(true);
+        setError('');
+        try {
+            const uid = authService.getCurrentUid();
+            if (!uid) throw new Error("Auth required.");
+            await dbService.redeemCode(uid, redeemCodeInput);
+            onClose();
+        } catch (err: any) {
+            setError(err.message || "Invalid code.");
+        } finally {
+            setIsRedeeming(false);
+        }
+    };
+
+    if (isPending || localSuccess) {
         return (
             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                <div className="bg-jg-surface border border-yellow-500/50 rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl animate-in zoom-in duration-300 relative">
+                <div className="bg-jg-surface border border-jg-primary/50 rounded-2xl p-8 max-w-sm w-full shadow-2xl animate-in zoom-in duration-300 relative">
                     <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-white">
                         <X className="w-5 h-5" />
                     </button>
-                    <div className="mx-auto w-16 h-16 bg-yellow-500/20 rounded-full flex items-center justify-center mb-4 animate-pulse">
-                        <Clock className="w-8 h-8 text-yellow-500" />
-                    </div>
-                    <h3 className="text-xl font-bold text-white mb-2">Verification Pending</h3>
-                    <p className="text-sm text-gray-400 leading-relaxed mb-6">
-                        We have received your payment details. The admin is verifying the transaction ID <strong>(UTR)</strong>.
-                    </p>
                     
-                    <div className="space-y-3">
-                         {emailSent ? (
-                            <div className="w-full py-2 px-4 bg-green-900/30 border border-green-500/50 rounded-lg text-sm text-green-400 font-medium flex items-center justify-center gap-2">
-                                <CheckCircle className="w-4 h-4" /> Email Sent Automatically
+                    <div className="text-center mb-6">
+                        <div className="mx-auto w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center mb-4">
+                            <Clock className="w-8 h-8 text-jg-primary animate-pulse" />
+                        </div>
+                        <h3 className="text-xl font-bold text-white mb-2">Payment Verification</h3>
+                        <p className="text-xs text-gray-400">
+                            Wait for Admin to mail your <strong>Redeem Code</strong> to your inbox.
+                        </p>
+                    </div>
+                    
+                    <div className="space-y-4">
+                        <div className="bg-black/40 p-4 rounded-xl border border-gray-800">
+                            <label className="block text-[10px] uppercase font-bold text-gray-500 mb-2 tracking-widest">Paste Code to Unlock</label>
+                            <div className="flex gap-2">
+                                <input 
+                                    type="text"
+                                    value={redeemCodeInput}
+                                    onChange={(e) => setRedeemCodeInput(e.target.value.toUpperCase())}
+                                    placeholder="JG-XXXX-XXXX"
+                                    className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white text-xs font-mono focus:ring-1 focus:ring-jg-primary"
+                                />
+                                <button 
+                                    onClick={handleRedeem}
+                                    disabled={isRedeeming || !redeemCodeInput}
+                                    className="px-3 bg-jg-primary hover:bg-blue-600 rounded-lg text-white disabled:opacity-50"
+                                >
+                                    {isRedeeming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ticket className="w-4 h-4" />}
+                                </button>
                             </div>
-                         ) : (
+                        </div>
+
+                        {error && <p className="text-[10px] text-red-400 text-center">{error}</p>}
+
+                        <div className="text-center">
+                            <p className="text-[10px] text-gray-500 mb-2">Haven't received the code?</p>
                             <a 
-                                href={mailtoLink}
-                                className="w-full py-2 px-4 bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded-lg text-sm text-blue-400 font-medium flex items-center justify-center gap-2 transition-all hover:border-blue-500 hover:text-blue-300"
+                                href={`mailto:${ADMIN_EMAIL}?subject=Payment Verification Request&body=UTR: ${utr}`}
+                                className="text-[10px] text-jg-primary hover:underline flex items-center justify-center gap-1"
                             >
-                                <Mail className="w-4 h-4" /> Email Failed? Send Manually
+                                <Mail className="w-3 h-3" /> Remind Admin via Email
                             </a>
-                         )}
-                        
-                        <div className="bg-gray-900/50 rounded p-3 text-xs text-gray-500 border border-gray-800">
-                            Estimated time: <span className="text-gray-300 font-semibold">1-2 hours</span>.
-                            <br/>
-                            This modal will close automatically when approved.
                         </div>
                     </div>
                 </div>
@@ -84,82 +138,31 @@ export const UnlockModal: React.FC<UnlockModalProps> = ({ version, isPending, on
         );
     }
 
-    const getPriceDisplay = () => `₹${getNumericPrice()}`;
-
-    const generateUPILink = () => {
-        const amount = getNumericPrice();
-        const note = `Unlock ${version}`;
-        return `upi://pay?pa=${YOUR_FAMPAY_ID}&pn=${encodeURIComponent(YOUR_NAME)}&am=${amount}&tn=${encodeURIComponent(note)}&cu=INR`;
-    };
-
-    const generateQRCodeURL = () => {
-        const upiLink = generateUPILink();
-        return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiLink)}`;
-    };
-
     const handleSubmit = async () => {
-        if (utr.length !== 12) {
-            setError('Please enter a valid 12-digit UTR/Ref ID.');
-            return;
-        }
-
+        if (utr.length < 10) { setError('Enter valid UTR/Ref ID.'); return; }
         setIsSubmitting(true);
         setError('');
-        
         try {
-            // 1. Database Submission
-            let dbSuccess = false;
-            try {
-                await onSubmitRequest(utr);
-                dbSuccess = true;
-            } catch (dbErr: any) {
-                console.error("Database submission failed:", dbErr);
-            }
+            const uid = authService.getCurrentUid();
+            if (!uid) throw new Error("Not logged in.");
+            
+            const profile = await dbService.getUserProfile(uid);
+            const username = profile?.displayName || 'User';
 
-            // 2. Email Notification
-            let emailSuccess = false;
-            try {
-                const uid = authService.getCurrentUid();
-                let username = 'Unknown User';
-                
-                if (uid) {
-                    const profile = await dbService.getUserProfile(uid);
-                    if (profile?.displayName) username = profile.displayName;
-                }
-
-                emailSuccess = await emailService.sendUnlockRequest(
-                    username, 
-                    uid || 'N/A', 
-                    version, 
-                    getNumericPrice().toString(), 
-                    utr
-                );
-                
-                if (emailSuccess) setEmailSent(true);
-            } catch (emailErr: any) {
-                console.error("Email service failed:", emailErr);
-                // If DB succeeded but email failed, we still count as a success (UI wise)
-                // But we store the error if BOTH fail
-                if (!dbSuccess) throw emailErr;
-            }
+            const { redeemCode } = await dbService.submitPayment(uid, version, utr, username);
+            await emailService.sendUnlockRequest(
+                username, uid, version, getNumericPrice().toString(), utr, redeemCode
+            );
 
             setLocalSuccess(true);
-            
         } catch (err: any) {
-            console.error("Unlock submission failed:", err);
-            // Instead of just err.message which might be [object Object] if not handled, 
-            // we use the message or a fallback string.
-            const errorMessage = typeof err === 'string' ? err : (err?.message || "An unexpected error occurred.");
-            setError(errorMessage);
-        } finally {
-            setIsSubmitting(false);
-        }
+            setError(err.message || "Failed to submit.");
+        } finally { setIsSubmitting(false); }
     };
 
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
             <div className="bg-jg-surface border border-gray-700 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden relative animate-in fade-in zoom-in duration-200">
-                
                 <div className="p-6 bg-gradient-to-r from-gray-900 to-jg-surface border-b border-gray-700 flex justify-between items-start">
                     <div>
                         <h3 className="text-xl font-bold text-white flex items-center gap-2">
@@ -171,7 +174,6 @@ export const UnlockModal: React.FC<UnlockModalProps> = ({ version, isPending, on
                             <Lock className="w-5 h-5 text-jg-primary" />
                             Unlock {getVersionName()}
                         </h3>
-                        <p className="text-sm text-gray-400 mt-1">Premium Feature Access</p>
                     </div>
                     <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
                         <X className="w-6 h-6" />
@@ -181,93 +183,67 @@ export const UnlockModal: React.FC<UnlockModalProps> = ({ version, isPending, on
                 <div className="p-6">
                     {step === 'info' ? (
                         <div className="space-y-6">
-                            <div className="text-center py-4 bg-gray-800/50 rounded-xl border border-dashed border-gray-600">
-                                <span className="text-gray-400 text-sm uppercase tracking-wide">One-time Purchase</span>
-                                <div className="text-4xl font-extrabold text-white mt-1 text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-amber-500">
-                                    {getPriceDisplay()}
-                                </div>
+                            <div className="text-center py-6 bg-gray-800/30 rounded-xl border border-gray-700">
+                                <span className="text-gray-500 text-xs uppercase font-bold tracking-widest">Flagship Access</span>
+                                <div className="text-4xl font-black text-white mt-2">₹{getNumericPrice()}</div>
                             </div>
-
-                            <button 
-                                onClick={() => setStep('payment')}
-                                className="w-full py-3 px-4 bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-semibold rounded-lg shadow-lg shadow-orange-500/20 flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02]"
-                            >
-                                <Smartphone className="w-5 h-5" />
-                                Pay via UPI / Fampay
-                            </button>
+                            
+                            <div className="grid grid-cols-1 gap-3">
+                                {!hasTrialed && getTrialText() && (
+                                     <button 
+                                        onClick={handleStartTrial}
+                                        disabled={isTrialing}
+                                        className="w-full py-3 bg-gray-800 hover:bg-gray-700 text-jg-primary font-bold rounded-xl border border-jg-primary/30 flex items-center justify-center gap-2 transition-all"
+                                    >
+                                        {isTrialing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Zap className="w-5 h-5" />}
+                                        Start {getTrialText()} (Free)
+                                    </button>
+                                )}
+                                
+                                <button 
+                                    onClick={() => setStep('payment')}
+                                    className="w-full py-4 bg-jg-primary hover:bg-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-900/40 flex items-center justify-center gap-2 transition-all"
+                                >
+                                    <Smartphone className="w-5 h-5" /> Buy Permanent Access
+                                </button>
+                            </div>
+                            
+                            {hasTrialed && (
+                                <p className="text-[10px] text-center text-jg-muted">
+                                    You have already used your free trial for this version.
+                                </p>
+                            )}
+                            {error && <p className="text-xs text-red-400 text-center">{error}</p>}
                         </div>
                     ) : (
                         <div className="space-y-6 flex flex-col items-center">
-                            <div className="bg-white p-3 rounded-xl shadow-inner">
+                            <div className="bg-white p-3 rounded-2xl shadow-xl">
                                 <img 
-                                    src={generateQRCodeURL()} 
-                                    alt="UPI QR Code" 
-                                    className="w-40 h-40 object-contain mix-blend-multiply"
+                                    src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`upi://pay?pa=${YOUR_FAMPAY_ID}&pn=${encodeURIComponent(YOUR_NAME)}&am=${getNumericPrice()}&tn=JG Unlock ${version}`)}`} 
+                                    alt="QR" className="w-40 h-40 mix-blend-multiply" 
                                 />
                             </div>
-
-                            <div className="text-center space-y-1">
-                                <p className="text-sm text-gray-300">Scan with <span className="font-bold text-orange-400">Fampay</span> or any UPI App</p>
-                                <p className="text-xs text-gray-500">Pay <span className="text-white font-mono">{getPriceDisplay()}</span> to <span className="text-white font-mono">{YOUR_FAMPAY_ID}</span></p>
+                            <div className="text-center">
+                                <p className="text-xs text-gray-400">Scan with Fampay / Any UPI</p>
+                                <p className="text-sm font-mono text-white mt-1">{YOUR_FAMPAY_ID}</p>
                             </div>
-
-                            <a 
-                                href={generateUPILink()}
-                                className="w-full py-2 px-4 bg-gray-800 hover:bg-gray-700 text-center rounded-lg text-sm text-blue-400 flex items-center justify-center gap-2 transition-colors md:hidden"
-                            >
-                                <ExternalLink className="w-4 h-4" /> Open Payment App
-                            </a>
-
-                            <div className="w-full border-t border-gray-700 pt-4 space-y-3">
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-400 mb-1 ml-1">
-                                        Enter 12-digit UTR / Ref No.
-                                    </label>
-                                    <input
-                                        type="text"
-                                        maxLength={12}
-                                        value={utr}
-                                        onChange={(e) => {
-                                            setUtr(e.target.value.replace(/\D/g, ''));
-                                            setError('');
-                                        }}
-                                        placeholder="e.g. 324189012345"
-                                        className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500 text-sm font-mono tracking-widest text-center"
-                                    />
-                                </div>
-                                
+                            <div className="w-full space-y-3 pt-4 border-t border-gray-800">
+                                <input
+                                    type="text"
+                                    value={utr}
+                                    onChange={(e) => setUtr(e.target.value.replace(/\D/g, ''))}
+                                    placeholder="Enter 12-digit UTR / Ref ID"
+                                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white text-sm font-mono text-center focus:ring-1 focus:ring-jg-primary"
+                                />
                                 <button 
                                     onClick={handleSubmit}
-                                    disabled={utr.length !== 12 || isSubmitting}
-                                    className={`w-full py-3 px-4 font-bold rounded-lg shadow-lg flex items-center justify-center gap-2 transition-all ${
-                                        utr.length === 12 && !isSubmitting
-                                        ? 'bg-blue-600 hover:bg-blue-500 text-white'
-                                        : 'bg-gray-800 text-gray-500 cursor-not-allowed'
-                                    }`}
+                                    disabled={utr.length < 10 || isSubmitting}
+                                    className="w-full py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-lg flex items-center justify-center gap-2"
                                 >
-                                    {isSubmitting ? (
-                                        <>
-                                            <Loader2 className="w-5 h-5 animate-spin" />
-                                            Submitting...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Send className="w-5 h-5" />
-                                            Submit for Approval
-                                        </>
-                                    )}
+                                    {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                                    Submit Transaction
                                 </button>
-                                
-                                {error && (
-                                    <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-xs flex items-start gap-2 animate-in slide-in-from-top-1">
-                                        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                                        <span>{error}</span>
-                                    </div>
-                                )}
-                                
-                                <p className="text-[10px] text-gray-500 text-center">
-                                    The Admin will verify the UTR and approve via email.
-                                </p>
+                                {error && <p className="text-xs text-red-400 text-center">{error}</p>}
                             </div>
                         </div>
                     )}

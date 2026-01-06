@@ -1,3 +1,4 @@
+
 /**
  * JG Execution Engine & Transpiler
  * Supports Version 0, Version 0.1 Remastered, Version 1.0 (OOP), Version 1.1 (Input), and Version 1.2 (Strict Types)
@@ -520,7 +521,7 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
                       } else if (expr.includes(' has ') && (expr.startsWith('map ') || version === 'v0.1-remastered')) {
                            val = {}; 
                            const content = expr.replace(/^(map\s+)?has\s+/, '');
-                           const pairs = content.split(/\sand\s/);
+                           const pairs = content.split(/\sas\s/);
                            for (const p of pairs) {
                                const [k, v] = p.split(/\sas\s/);
                                val[k.replace(/"/g, '').trim()] = await evaluateExpressionAsync(v.trim(), scopeStack, version, instanceCtx, loadedLibraries);
@@ -843,18 +844,16 @@ export const executeJG = (input: string, version: JGVersion = 'v0', stdIn: strin
 };
 
 export const transpileJGtoPython = async (input: string, version: JGVersion): Promise<string> => {
-    // Check localStorage first, then environment variable
-    const storedKey = localStorage.getItem('jg_gemini_api_key');
-    const envKey = process.env.API_KEY;
-    const finalKey = storedKey || envKey;
+    // FIX: Always use process.env.API_KEY exclusively as per guidelines.
+    const apiKey = process.env.API_KEY;
 
-    if (!finalKey) {
-        return "# API Key Missing. Please configure it in the 'Setup AI' menu.";
+    if (!apiKey) {
+        return "# API Key Missing. Please ensure the process.env.API_KEY environment variable is configured.";
     }
 
     try {
-        const ai = new GoogleGenAI({ apiKey: finalKey });
-        // Switched to 'gemini-3-flash-preview' to avoid 429 quota issues with Pro on free tier
+        const ai = new GoogleGenAI({ apiKey: apiKey });
+        // Switched to 'gemini-3-flash-preview' as per model selection guidelines for general text tasks
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
             contents: `Translate the following JulyGod (JG) source code into Python 3.
@@ -888,6 +887,7 @@ export const transpileJGtoPython = async (input: string, version: JGVersion): Pr
             }
         });
 
+        // FIX: Extract text using the .text property (not a method) as per guidelines
         let text = response.text || "";
         text = text.replace(/^```python\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '');
         return text;

@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { ArrowRight, BookOpen, Lock, AlertCircle, Layers, Key } from 'lucide-react';
+
+import React from 'react';
+import { ArrowRight, BookOpen, Lock, AlertCircle, Layers } from 'lucide-react';
 import { FEATURES } from '../constants';
-import { ApiKeyModal } from './ApiKeyModal';
 
 interface HeroProps {
     onGetStarted: () => void;
@@ -9,8 +9,6 @@ interface HeroProps {
 }
 
 export const Hero: React.FC<HeroProps> = ({ onGetStarted, onReadDocs }) => {
-    const [showApiKeyModal, setShowApiKeyModal] = useState(false);
-
     // Icon mapping
     const getIcon = (name: string) => {
         switch (name) {
@@ -24,7 +22,6 @@ export const Hero: React.FC<HeroProps> = ({ onGetStarted, onReadDocs }) => {
 
     return (
         <div className="relative pt-12 pb-12 lg:pt-32 lg:pb-24 overflow-hidden px-4">
-            {showApiKeyModal && <ApiKeyModal onClose={() => setShowApiKeyModal(false)} />}
             
             <div className="relative max-w-7xl mx-auto flex flex-col items-center text-center">
                 
@@ -58,16 +55,6 @@ export const Hero: React.FC<HeroProps> = ({ onGetStarted, onReadDocs }) => {
                         className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 border border-jg-surface text-base font-medium rounded-lg text-jg-muted bg-jg-surface hover:bg-gray-700 hover:text-white transition-colors active:scale-95 transform duration-150"
                     >
                         Read Specification
-                    </button>
-                </div>
-
-                <div className="mt-8 flex flex-wrap justify-center gap-3">
-                    <button
-                        onClick={() => setShowApiKeyModal(true)}
-                        className="group inline-flex items-center px-6 py-2 text-sm font-medium rounded-full text-jg-muted bg-gray-900/50 border border-gray-700 hover:border-jg-accent hover:text-white hover:bg-gray-800 transition-all duration-300 backdrop-blur-sm"
-                    >
-                        <Key className="w-4 h-4 mr-2 text-jg-accent group-hover:text-white transition-colors" />
-                        Configure Gemini API
                     </button>
                 </div>
 

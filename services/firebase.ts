@@ -1,5 +1,4 @@
 import { initializeApp, getApps } from "firebase/app";
-import { getAnalytics, logEvent } from "firebase/analytics";
 import { 
     getAuth, 
     createUserWithEmailAndPassword, 
@@ -24,19 +23,7 @@ import {
     FirestoreError
 } from "firebase/firestore";
 
-// Define locally to avoid circular dependency with App.tsx
 export type JGVersion = 'v0' | 'v0.1-remastered' | 'v1.0' | 'v1.1' | 'v1.2';
-
-// --- SECURITY & SETUP INSTRUCTIONS ---
-/*
-    1. FIREBASE CONSOLE SETUP:
-       - Go to Project Settings > General to find your keys.
-       - Ensure they are correct.
-
-    2. DATABASE SETUP:
-       - Since you created the 'default' database, this code now automatically connects to it.
-       - If 'permission-denied' errors persist, enable the API in Google Cloud Console.
-*/
 
 const firebaseConfig: any = {
   apiKey: "AIzaSyAtXl2LvN2i2o3CczXRh7Yv1-Ugxfeg8jU",
@@ -48,148 +35,142 @@ const firebaseConfig: any = {
   measurementId: "G-ZSW5H5BV0F"
 };
 
-// Admin Email for notifications
-const ADMIN_EMAIL = "Divitbansal016@gmail.com";
-
 let auth: any;
 let db: any;
-let analytics: any;
 let isDemoMode = true;
 
-// Initialize Firebase only if keys are present
 if (firebaseConfig.apiKey) {
     try {
         const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
         auth = getAuth(app);
-        
-        // Connect to the DEFAULT database
-        // This connects to the '(default)' database you just created.
         db = getFirestore(app);
-        
-        // Initialize Analytics if supported
-        if (typeof window !== 'undefined') {
-            try {
-                analytics = getAnalytics(app);
-                console.log("📊 Firebase: Analytics Active");
-            } catch (e) {
-                console.warn("Analytics failed to load (ad-blocker maybe?)");
-            }
-        }
-
         isDemoMode = false;
-        console.log(`🔥 Firebase: Connected to Default Database`);
     } catch (e) {
-        console.error("Firebase Initialization Error:", e);
         isDemoMode = true;
     }
-} else {
-    console.warn("⚠️ Firebase: Config missing. Running in DEMO MODE (Local Storage).");
 }
-
-// --- DEMO MODE EVENT SYSTEM ---
-const demoListeners: Array<(user: any) => void> = [];
-const notifyListeners = (user: any) => {
-    demoListeners.forEach(cb => cb(user));
-};
-
-// --- TYPES ---
 
 export interface UserProfile {
     uid: string;
     email: string;
     displayName: string;
     unlockedVersions: JGVersion[];
+    trials: Record<string, string>; // Maps version to expiration ISO string
     pendingRequests: {
         version: JGVersion;
         utr: string;
         date: string;
+        redeemCode: string;
     }[];
 }
 
-// --- API ---
+const generateRedeemCode = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const part = (len: number) => Array.from({length: len}, () => chars.charAt(Math.floor(Math.random() * chars.length))).join('');
+    return `JG-${part(4)}-${part(4)}`;
+};
 
 export const authService = {
     isDemo: () => isDemoMode,
-
     signUp: async (email: string, pass: string, name: string) => {
-        if (isDemoMode) {
-            const mockUser = { uid: "demo_" + Date.now(), email, displayName: name };
-            localStorage.setItem('jg_demo_user', JSON.stringify(mockUser));
-            notifyListeners(mockUser);
-            return mockUser;
-        }
+        if (isDemoMode) return null;
         const cred = await createUserWithEmailAndPassword(auth, email, pass);
         if (cred.user) {
             await updateProfile(cred.user, { displayName: name });
-            // Initialize User Doc in Real DB
             await setDoc(doc(db, "users", cred.user.uid), {
                 email,
                 displayName: name,
-                unlockedVersions: ['v0.1-remastered'], // Free tier
+                unlockedVersions: ['v0.1-remastered'],
+                trials: {},
                 createdAt: serverTimestamp()
             });
-            if (analytics) logEvent(analytics, 'sign_up', { method: 'email' });
         }
         return cred.user;
     },
-
     signIn: async (email: string, pass: string) => {
-        if (isDemoMode) {
-            const mockUser = { uid: "demo_123", email, displayName: "Demo User" };
-            localStorage.setItem('jg_demo_user', JSON.stringify(mockUser));
-            notifyListeners(mockUser); 
-            return mockUser;
-        }
-        const cred = await signInWithEmailAndPassword(auth, email, pass);
-        if (analytics) logEvent(analytics, 'login', { method: 'email' });
-        return cred.user;
+        if (isDemoMode) return null;
+        return await signInWithEmailAndPassword(auth, email, pass);
     },
-
     signOut: async () => {
-        if (isDemoMode) {
-            localStorage.removeItem('jg_demo_user');
-            notifyListeners(null); 
-            return;
-        }
+        if (isDemoMode) return;
         return signOut(auth);
     },
-
     onStateChange: (callback: (user: User | null) => void) => {
-        if (isDemoMode) {
-            const stored = localStorage.getItem('jg_demo_user');
-            callback(stored ? JSON.parse(stored) : null);
-            demoListeners.push(callback);
-            return () => {
-                const index = demoListeners.indexOf(callback);
-                if (index > -1) demoListeners.splice(index, 1);
-            };
-        }
+        if (isDemoMode) return () => {};
         return onAuthStateChanged(auth, callback);
     },
-
-    getCurrentUid: () => {
-        if (isDemoMode) {
-            const stored = localStorage.getItem('jg_demo_user');
-            return stored ? JSON.parse(stored).uid : null;
-        }
-        return auth?.currentUser?.uid || null;
-    }
+    getCurrentUid: () => auth?.currentUser?.uid || null,
+    getCurrentEmail: () => auth?.currentUser?.email || null
 };
 
 export const dbService = {
-    getDatabaseId: () => '(default)',
+    adminUnlockVersion: async (adminUid: string, targetUid: string, version: JGVersion) => {
+        if (isDemoMode) throw new Error("Demo Mode");
+        const userRef = doc(db, "users", targetUid);
+        const userSnap = await getDoc(userRef);
+        if (!userSnap.exists()) throw new Error(`User not found.`);
+        const userData = userSnap.data();
+        const pending = userData.pendingRequests || [];
+        const updatedPending = pending.filter((p: any) => p.version !== version);
+        const updatedUnlocked = Array.from(new Set([...(userData.unlockedVersions || []), version]));
+        await updateDoc(userRef, {
+            unlockedVersions: updatedUnlocked,
+            pendingRequests: updatedPending
+        });
+        return true;
+    },
 
-    // Submit a Payment Request to Real Firestore
+    startTrial: async (uid: string, version: JGVersion) => {
+        if (isDemoMode) return;
+        const userRef = doc(db, "users", uid);
+        const userSnap = await getDoc(userRef);
+        if (!userSnap.exists()) return;
+
+        const userData = userSnap.data();
+        const trials = userData.trials || {};
+
+        if (trials[version]) throw new Error("Trial already used for this version.");
+
+        const now = new Date();
+        let days = 30;
+        if (version === 'v0') days = 365;
+        if (version === 'v1.1') days = 90;
+        if (version === 'v1.2') days = 30;
+
+        const expiry = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+        
+        await updateDoc(userRef, {
+            [`trials.${version}`]: expiry.toISOString()
+        });
+    },
+
+    redeemCode: async (uid: string, code: string) => {
+        if (isDemoMode) throw new Error("Demo Mode");
+        const userRef = doc(db, "users", uid);
+        const userSnap = await getDoc(userRef);
+        if (!userSnap.exists()) throw new Error("User profile missing.");
+        
+        const userData = userSnap.data();
+        const pending = userData.pendingRequests || [];
+        const requestToUnlock = pending.find((p: any) => p.redeemCode === code.trim());
+        
+        if (!requestToUnlock) throw new Error("Invalid or expired Redeem Code.");
+
+        const version = requestToUnlock.version;
+        const updatedPending = pending.filter((p: any) => p.redeemCode !== code.trim());
+        const updatedUnlocked = Array.from(new Set([...(userData.unlockedVersions || []), version]));
+
+        await updateDoc(userRef, {
+            unlockedVersions: updatedUnlocked,
+            pendingRequests: updatedPending
+        });
+        return version;
+    },
+
     submitPayment: async (uid: string, version: JGVersion, utr: string, username: string) => {
-        if (isDemoMode) {
-            const key = `jg_pending_${uid}`;
-            const existing = JSON.parse(localStorage.getItem(key) || '[]');
-            existing.push({ version, utr, date: new Date().toISOString() });
-            localStorage.setItem(key, JSON.stringify(existing));
-            return;
-        }
+        if (isDemoMode) return { redeemCode: '' };
 
-        // Calculate Price for email
+        const redeemCode = generateRedeemCode();
         let price = "0";
         switch(version) {
             case 'v0': price = "20"; break;
@@ -198,129 +179,34 @@ export const dbService = {
             case 'v1.2': price = "1400"; break;
         }
 
-        try {
-            const timestamp = serverTimestamp();
+        await addDoc(collection(db, "payment_requests"), {
+            uid, username, version, utr, price, redeemCode,
+            status: 'pending',
+            createdAt: serverTimestamp()
+        });
 
-            // 1. Add to global requests collection (For Zapier or Admin Panel)
-            await addDoc(collection(db, "payment_requests"), {
-                uid,
-                username,
-                version,
-                utr,
-                price,
-                status: 'pending',
-                createdAt: timestamp
-            });
+        const userRef = doc(db, "users", uid);
+        await setDoc(userRef, {
+            pendingRequests: arrayUnion({
+                version, utr, redeemCode,
+                date: new Date().toISOString()
+            })
+        }, { merge: true });
 
-            // 2. Add to 'mail' collection (For Firebase "Trigger Email" Extension)
-            await addDoc(collection(db, "mail"), {
-                to: ADMIN_EMAIL,
-                message: {
-                    subject: `[JulyGod] New Unlock Request: ${username}`,
-                    html: `
-                        <h2>New Payment Verification Needed</h2>
-                        <p><strong>User:</strong> ${username}</p>
-                        <p><strong>User ID:</strong> ${uid}</p>
-                        <p><strong>Model/Version Requested:</strong> ${version}</p>
-                        <p><strong>Amount Paid:</strong> ₹${price}</p>
-                        <p><strong>Transaction ID (UTR):</strong> ${utr}</p>
-                        <hr/>
-                        <p>Please verify the payment in your dashboard or bank account.</p>
-                    `
-                }
-            });
-
-            // 3. Add to user profile for Real-time UI updates
-            // CRITICAL FIX: Use setDoc with merge: true instead of updateDoc.
-            // This ensures if the user doc was missing (due to previous DB errors), it gets created now.
-            const userRef = doc(db, "users", uid);
-            await setDoc(userRef, {
-                displayName: username, // Ensure basic info is present if doc is new
-                pendingRequests: arrayUnion({
-                    version,
-                    utr,
-                    date: new Date().toISOString()
-                })
-            }, { merge: true });
-
-            if (analytics) logEvent(analytics, 'unlock_request', { version, utr });
-        } catch (error: any) {
-             // Handle generic Firestore API disabled error
-             if (error.code === 'permission-denied' || error.message?.includes('Firestore API') || error.message?.includes('data access is disabled')) {
-                console.error("🚨 Firestore API Error caught in submitPayment");
-                throw error; // Re-throw to be caught by UI
-            }
-            throw error;
-        }
+        return { redeemCode };
     },
 
-    // Real-time listener
-    subscribeToUserProfile: (
-        uid: string, 
-        onUpdate: (profile: UserProfile | null) => void,
-        onError?: (error: any) => void
-    ) => {
-        if (isDemoMode) {
-            const check = () => {
-                const key = `jg_pending_${uid}`;
-                const pending = JSON.parse(localStorage.getItem(key) || '[]');
-                onUpdate({
-                    uid,
-                    email: "demo@julygod.com",
-                    displayName: "Demo User",
-                    unlockedVersions: ['v0.1-remastered'],
-                    pendingRequests: pending
-                });
-            };
-            check();
-            const interval = setInterval(check, 2000);
-            return () => clearInterval(interval);
-        }
-
-        // Real Firestore Listener with error handling
-        return onSnapshot(
-            doc(db, "users", uid), 
-            (doc: DocumentSnapshot) => {
-                if (doc.exists()) {
-                    onUpdate({ uid, ...doc.data() } as UserProfile);
-                } else {
-                    onUpdate(null);
-                }
-            },
-            (error: FirestoreError) => {
-                 if (onError) onError(error);
-
-                 if (error.code === 'permission-denied' || error.message?.includes('Firestore API') || error.message?.includes('data access is disabled')) {
-                    console.warn(`⚠️ FIRESTORE DISABLED: The Cloud Firestore API is not enabled.`);
-                } else {
-                    console.error("🔥 Firestore Listen Error:", error);
-                }
-            }
-        );
+    subscribeToUserProfile: (uid: string, onUpdate: (profile: UserProfile | null) => void, onError?: (error: any) => void) => {
+        if (isDemoMode) return () => {};
+        return onSnapshot(doc(db, "users", uid), (doc: DocumentSnapshot) => {
+            if (doc.exists()) onUpdate({ uid, ...doc.data() } as UserProfile);
+            else onUpdate(null);
+        }, (error: FirestoreError) => { if (onError) onError(error); });
     },
 
-    // Legacy fetch
     getUserProfile: async (uid: string): Promise<UserProfile | null> => {
-        if (isDemoMode) {
-            const key = `jg_pending_${uid}`;
-            const pending = JSON.parse(localStorage.getItem(key) || '[]');
-            return {
-                uid,
-                email: "demo@julygod.com",
-                displayName: "Demo User",
-                unlockedVersions: ['v0.1-remastered'],
-                pendingRequests: pending
-            };
-        }
-        
-        try {
-            const snap = await getDoc(doc(db, "users", uid));
-            if (snap.exists()) {
-                return { uid, ...snap.data() } as UserProfile;
-            }
-        } catch (e) {
-            console.error("🔥 Firestore Fetch Error:", e);
-        }
-        return null;
+        if (isDemoMode) return null;
+        const snap = await getDoc(doc(db, "users", uid));
+        return snap.exists() ? { uid, ...snap.data() } as UserProfile : null;
     }
 };

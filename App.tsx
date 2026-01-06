@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { Playground } from './components/Playground';
@@ -6,26 +6,19 @@ import { Documentation } from './components/Documentation';
 import { Footer } from './components/Footer';
 import { UnlockModal } from './components/UnlockModal';
 import { AuthModal } from './components/AuthModal';
-import { authService, dbService } from './services/firebase';
-import { AlertTriangle, ExternalLink, X, ShieldAlert } from 'lucide-react';
+import { authService, dbService, UserProfile } from './services/firebase';
+import { AlertTriangle, ExternalLink, X, ShieldAlert, Loader2, CheckCircle2, ShieldCheck } from 'lucide-react';
 
 export type JGVersion = 'v0' | 'v0.1-remastered' | 'v1.0' | 'v1.1' | 'v1.2';
+const ADMIN_EMAIL = "Divitbansal016@gmail.com";
 
-// Premium Ambient Background Component
 const AmbientBackground = () => (
   <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
-    {/* Base Dark Layer */}
     <div className="absolute inset-0 bg-[#020617]" />
-    
-    {/* Animated Glowing Orbs */}
     <div className="absolute top-[-10%] left-[-10%] w-[40rem] h-[40rem] bg-jg-primary/20 rounded-full mix-blend-screen filter blur-[100px] animate-blob" />
     <div className="absolute top-[20%] right-[-10%] w-[35rem] h-[35rem] bg-jg-accent/20 rounded-full mix-blend-screen filter blur-[100px] animate-blob" style={{ animationDelay: '2s' }} />
     <div className="absolute bottom-[-10%] left-[20%] w-[45rem] h-[45rem] bg-indigo-500/20 rounded-full mix-blend-screen filter blur-[100px] animate-blob" style={{ animationDelay: '4s' }} />
-    
-    {/* Subtle Noise Texture for texture */}
     <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay"></div>
-    
-    {/* faint Grid overlay for engineering feel */}
     <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:40px_40px] opacity-30"></div>
   </div>
 );
@@ -33,272 +26,167 @@ const AmbientBackground = () => (
 function App() {
   const [currentView, setView] = useState<'home' | 'playground' | 'docs'>('home');
   const [jgVersion, setJgVersion] = useState<JGVersion>('v1.2');
-  
-  // Auth State
   const [user, setUser] = useState<any>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
-  
-  // Data State
   const [unlockedVersions, setUnlockedVersions] = useState<JGVersion[]>(['v0.1-remastered']);
   const [pendingRequests, setPendingRequests] = useState<{version: JGVersion, utr: string}[]>([]);
   const [showUnlockModal, setShowUnlockModal] = useState<JGVersion | null>(null);
   
-  // Global System Status
+  const [adminTask, setAdminTask] = useState<{status: 'idle'|'processing'|'success'|'error', message: string}>({ status: 'idle', message: '' });
+  const hasProcessedRef = useRef(false);
+
   const [dbError, setDbError] = useState<{message: string, link?: string, type?: 'error'|'warning'|'rules'} | null>(null);
 
-  // Initialize Auth Listener & Real-time DB Listener
   useEffect(() => {
     let unsubscribeProfile: (() => void) | null = null;
-
     const unsubscribeAuth = authService.onStateChange(async (currentUser) => {
         setUser(currentUser);
-        
-        // Cleanup previous profile listener if exists (e.g. on logout or user switch)
-        if (unsubscribeProfile) {
-            unsubscribeProfile();
-            unsubscribeProfile = null;
-        }
+        if (unsubscribeProfile) { unsubscribeProfile(); unsubscribeProfile = null; }
 
         if (currentUser) {
-            // Subscribe to real-time updates for automatic unlocking
             unsubscribeProfile = dbService.subscribeToUserProfile(
                 currentUser.uid, 
                 (profile) => {
-                    // Success callback
-                    setDbError(null); // Clear errors on success
+                    setDbError(null);
+                    setUserProfile(profile);
                     if (profile) {
                         setUnlockedVersions(profile.unlockedVersions || ['v0.1-remastered']);
                         setPendingRequests(profile.pendingRequests || []);
-                        
-                        // Auto-close unlock modal if the requested version is now unlocked by admin
-                        setShowUnlockModal(currentModal => {
-                             if (currentModal && profile.unlockedVersions?.includes(currentModal)) {
-                                 return null; // Close modal
-                             }
-                             return currentModal;
-                        });
                     }
                 },
                 (error) => {
-                    // Error callback
-                    console.error("App DB Error:", error);
-                    
-                    const errMsg = error.message || '';
-                    
-                    // 1. Handle Rules Locked (Permission Denied)
                     if (error.code === 'permission-denied') {
-                        // Check if it's explicitly API disabled or just rules
-                        if (errMsg.includes('Firestore API') || errMsg.includes('disabled')) {
-                             setDbError({
-                                message: "Firestore API is disabled in Cloud Console.",
-                                link: "https://console.developers.google.com/apis/api/firestore.googleapis.com/overview?project=july-god-programming-language",
-                                type: 'error'
-                            });
-                        } else {
-                            // This is the common "Missing or insufficient permissions" error -> RULES LOCKED
-                            setDbError({
-                                message: "Database is Locked. You must Publish Security Rules in Firebase Console.",
-                                link: "https://console.firebase.google.com/project/july-god-programming-language/firestore/rules",
-                                type: 'rules'
-                            });
-                        }
-                    }
-                    // 2. Handle DB Missing (Default/MongoDB mismatch)
-                    else if (error.code === 'not-found' || errMsg.includes('does not exist')) {
-                         setDbError({
-                            message: "Database not found or in wrong mode. Create '(default)' in Native Mode.",
-                            link: "https://console.firebase.google.com/project/july-god-programming-language/firestore",
-                            type: 'error'
+                        setDbError({ 
+                            message: "Database Access Restricted. Check Security Rules.", 
+                            type: 'rules', 
+                            link: "https://console.firebase.google.com" 
                         });
-                    }
-                    // 3. Network / Offline
-                    else if (error.code === 'unavailable') {
-                        setDbError({ message: "Network offline. Working in offline mode.", type: 'warning' });
                     }
                 }
             );
         } else {
-            // Reset to defaults
             setUnlockedVersions(['v0.1-remastered']);
             setPendingRequests([]);
-            setDbError(null);
+            setUserProfile(null);
         }
     });
-
-    return () => {
-        unsubscribeAuth();
-        if (unsubscribeProfile) unsubscribeProfile();
-    };
+    return () => { unsubscribeAuth(); if (unsubscribeProfile) unsubscribeProfile(); };
   }, []);
 
-  // Smooth scroll to top when view changes
+  // Remote Unlock Logic for Admin
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [currentView]);
+    const handleUrlAction = async () => {
+      const queryParams = new URLSearchParams(window.location.search);
+      const hash = window.location.hash;
+      const hashParams = new URLSearchParams(hash.includes('?') ? hash.split('?')[1] : '');
+      const action = queryParams.get('action') || (hash.includes('unlock') ? 'unlock' : null);
+      const targetUid = queryParams.get('target_uid') || hashParams.get('target_uid');
+      const targetVer = (queryParams.get('target_ver') || hashParams.get('target_ver')) as JGVersion;
 
-  const handleVersionChange = (version: JGVersion) => {
-    setJgVersion(version);
-  };
-
-  const handleUnlockRequest = (version: JGVersion) => {
-      if (!user) {
+      if (action === 'unlock' && targetUid && targetVer && !hasProcessedRef.current) {
+        if (!user) {
+          setAdminTask({ status: 'error', message: 'Admin login required to approve payment.' });
           setShowAuthModal(true);
-      } else {
-          setShowUnlockModal(version);
-      }
-  }
+          return;
+        }
+        if (user.email !== ADMIN_EMAIL) {
+          setAdminTask({ status: 'error', message: 'Access Denied: Only Divit can unlock users.' });
+          return;
+        }
 
-  const handlePendingSubmission = async (version: JGVersion, utr: string) => {
-      if (user) {
-          try {
-              await dbService.submitPayment(user.uid, version, utr, user.displayName || 'User');
-          } catch (e: any) {
-              const errMsg = e.message || '';
-              if (e.code === 'permission-denied') {
-                   if (errMsg.includes('Firestore API')) {
-                        setDbError({
-                            message: "Firestore API is disabled.",
-                            link: "https://console.developers.google.com/apis/api/firestore.googleapis.com/overview?project=july-god-programming-language",
-                            type: 'error'
-                        });
-                   } else {
-                        setDbError({
-                            message: "Security Rules blocked this request. Check Firebase Console.",
-                            link: "https://console.firebase.google.com/project/july-god-programming-language/firestore/rules",
-                            type: 'rules'
-                        });
-                   }
-              } else if (e.code === 'not-found') {
-                   setDbError({
-                        message: "Database missing. Create '(default)' DB in Firebase.",
-                        link: "https://console.firebase.google.com/project/july-god-programming-language/firestore",
-                        type: 'error'
-                   });
-              }
-              throw e;
-          }
-      } else {
-          throw new Error("User not authenticated.");
+        hasProcessedRef.current = true;
+        setAdminTask({ status: 'processing', message: `Verifying payment and unlocking ${targetVer.toUpperCase()}...` });
+        
+        try {
+          await dbService.adminUnlockVersion(user.uid, targetUid, targetVer);
+          setAdminTask({ status: 'success', message: `Payment Approved! User unlocked.` });
+          setTimeout(() => {
+             window.history.replaceState({}, document.title, window.location.pathname);
+             setAdminTask({ status: 'idle', message: '' });
+             hasProcessedRef.current = false;
+          }, 8000);
+        } catch (e: any) {
+          console.error("Unlock error:", e);
+          setAdminTask({ status: 'error', message: `Critical Failure: ${e.message}` });
+          hasProcessedRef.current = false;
+        }
       }
-  };
+    };
+    handleUrlAction();
+  }, [user]);
 
-  // Check if a specific version is pending approval
-  const isPending = (ver: JGVersion) => {
-      return pendingRequests.some(r => r.version === ver);
+  const isVersionUnlocked = (v: JGVersion) => {
+      if (unlockedVersions.includes(v)) return true;
+      if (v === 'v1.0') return true; // Keep free tier logic if any
+      
+      // Trial Logic
+      if (userProfile?.trials?.[v]) {
+          const expiry = new Date(userProfile.trials[v]);
+          return expiry > new Date();
+      }
+      return false;
   };
 
   return (
     <div className="min-h-screen text-jg-text font-sans antialiased relative selection:bg-jg-accent selection:text-white">
-      
       <AmbientBackground />
+
+      {adminTask.status !== 'idle' && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-3xl animate-in fade-in duration-300">
+            <div className={`p-12 rounded-[2rem] border-2 flex flex-col items-center gap-8 max-w-sm text-center shadow-2xl ${
+                adminTask.status === 'success' ? 'bg-green-950/50 border-green-500/50 text-green-400' :
+                adminTask.status === 'error' ? 'bg-red-950/50 border-red-500/50 text-red-400' :
+                'bg-jg-surface border-jg-primary/50 text-white'
+            }`}>
+                {adminTask.status === 'processing' && <Loader2 className="w-20 h-20 animate-spin text-jg-primary" />}
+                {adminTask.status === 'success' && <ShieldCheck className="w-20 h-20 text-green-500" />}
+                {adminTask.status === 'error' && <AlertTriangle className="w-20 h-20 text-red-500" />}
+                
+                <div className="space-y-3">
+                    <h3 className="text-3xl font-black tracking-tight uppercase">Admin Console</h3>
+                    <p className="text-lg leading-relaxed opacity-90">{adminTask.message}</p>
+                </div>
+
+                {adminTask.status === 'error' && (
+                    <button 
+                        onClick={() => { setAdminTask({status:'idle', message:''}); hasProcessedRef.current = false; }} 
+                        className="px-10 py-3 bg-red-600 hover:bg-red-500 rounded-xl font-bold transition-all shadow-xl active:scale-95"
+                    >
+                        Close Console
+                    </button>
+                )}
+                
+                {adminTask.status === 'success' && (
+                    <div className="flex items-center gap-2 text-xs font-mono text-green-500/60 animate-pulse">
+                        <CheckCircle2 className="w-3 h-3" /> Database Synced
+                    </div>
+                )}
+            </div>
+        </div>
+      )}
 
       <div className="relative z-10 flex flex-col min-h-screen">
         <Navbar 
-          currentView={currentView} 
-          setView={setView} 
-          jgVersion={jgVersion}
-          setJgVersion={handleVersionChange}
-          unlockedVersions={unlockedVersions}
-          user={user}
+          currentView={currentView} setView={setView} 
+          jgVersion={jgVersion} setJgVersion={setJgVersion}
+          unlockedVersions={unlockedVersions} user={user}
+          userProfile={userProfile}
           onOpenAuth={() => setShowAuthModal(true)}
         />
-        
-        {showAuthModal && (
-            <AuthModal 
-                onClose={() => setShowAuthModal(false)}
-                onSuccess={() => setShowAuthModal(false)}
-            />
-        )}
-        
-        {showUnlockModal && (
-            <UnlockModal 
-                version={showUnlockModal} 
-                isPending={isPending(showUnlockModal)}
-                onClose={() => setShowUnlockModal(null)}
-                onSubmitRequest={(utr) => handlePendingSubmission(showUnlockModal, utr)}
-            />
-        )}
-
+        {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} onSuccess={() => setShowAuthModal(false)} />}
+        {showUnlockModal && <UnlockModal version={showUnlockModal} isPending={pendingRequests.some(r => r.version === showUnlockModal)} userProfile={userProfile} onClose={() => setShowUnlockModal(null)} onSubmitRequest={async (utr) => { await dbService.submitPayment(user.uid, showUnlockModal!, utr, user.displayName || 'User'); }} />}
         <main className="flex-grow flex flex-col pt-16">
-          {currentView === 'home' && (
-            <div className="animate-fade-in">
-              <Hero 
-                onGetStarted={() => setView('playground')} 
-                onReadDocs={() => setView('docs')}
-              />
-            </div>
-          )}
-          
-          {currentView === 'playground' && (
-             <div className="animate-fade-in flex-grow flex flex-col lg:h-full">
-              <Playground 
-                  jgVersion={jgVersion} 
-                  isUnlocked={unlockedVersions.includes(jgVersion)}
-                  onRequestUnlock={() => handleUnlockRequest(jgVersion)}
-              />
-            </div>
-          )}
-          
-          {currentView === 'docs' && (
-             <div className="animate-fade-in">
-              <Documentation jgVersion={jgVersion} />
-            </div>
-          )}
+          {currentView === 'home' && <Hero onGetStarted={() => setView('playground')} onReadDocs={() => setView('docs')} />}
+          {currentView === 'playground' && <Playground jgVersion={jgVersion} userProfile={userProfile} isUnlocked={isVersionUnlocked(jgVersion)} onRequestUnlock={() => user ? setShowUnlockModal(jgVersion) : setShowAuthModal(true)} />}
+          {currentView === 'docs' && <Documentation jgVersion={jgVersion} />}
         </main>
-
         <Footer />
-        
-        {/* Global System Error Banner */}
-        {dbError && (
-            <div className={`fixed bottom-0 left-0 right-0 backdrop-blur-md border-t p-4 z-[100] shadow-2xl animate-in slide-in-from-bottom-5 duration-300 ${
-                dbError.type === 'rules' 
-                ? 'bg-yellow-900/95 border-yellow-500' 
-                : 'bg-red-900/95 border-red-500'
-            }`}>
-                <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-                    <div className="flex items-center gap-3 text-white">
-                        <div className={`p-2 rounded-full animate-pulse ${
-                             dbError.type === 'rules' ? 'bg-yellow-500/20' : 'bg-red-500/20'
-                        }`}>
-                            {dbError.type === 'rules' ? <ShieldAlert className="w-5 h-5 text-yellow-200" /> : <AlertTriangle className="w-5 h-5 text-red-200" />}
-                        </div>
-                        <div>
-                            <p className="font-bold text-sm md:text-base">
-                                {dbError.type === 'rules' ? 'Security Rules Locked' : 'System Alert'}
-                            </p>
-                            <p className={`text-xs md:text-sm ${
-                                dbError.type === 'rules' ? 'text-yellow-100' : 'text-red-100'
-                            }`}>{dbError.message}</p>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                         {dbError.link && (
-                            <a 
-                                href={dbError.link} 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                className={`px-4 py-2 text-xs font-bold rounded hover:bg-gray-100 transition-colors flex items-center gap-2 ${
-                                    dbError.type === 'rules' 
-                                    ? 'bg-yellow-100 text-yellow-900' 
-                                    : 'bg-white text-red-900'
-                                }`}
-                            >
-                                {dbError.type === 'rules' ? 'Open Rules Tab' : 'Fix Issue'} <ExternalLink className="w-3 h-3" />
-                            </a>
-                        )}
-                        <button 
-                            onClick={() => setDbError(null)}
-                            className={`p-2 rounded-full transition-colors ${
-                                dbError.type === 'rules' ? 'hover:bg-yellow-800 text-yellow-200' : 'hover:bg-red-800 text-red-200'
-                            }`}
-                        >
-                            <X className="w-5 h-5" />
-                        </button>
-                    </div>
-                </div>
-            </div>
-        )}
-
+        {dbError && <div className="fixed bottom-0 left-0 right-0 bg-red-900/90 backdrop-blur-md border-t border-red-500 p-4 z-[100] flex justify-between items-center text-white">
+            <div className="flex items-center gap-3"><AlertTriangle className="w-5 h-5 text-red-200" /><span className="text-sm font-bold">{dbError.message}</span></div>
+            {dbError.link && <a href={dbError.link} target="_blank" className="text-xs underline">Fix in Console</a>}
+            <button onClick={() => setDbError(null)}><X className="w-5 h-5" /></button>
+        </div>}
       </div>
     </div>
   );
