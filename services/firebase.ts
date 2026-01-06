@@ -134,14 +134,18 @@ export const dbService = {
         const now = new Date();
         let days = 30;
         if (version === 'v0') days = 365;
-        if (version === 'v1.1') days = 90;
-        if (version === 'v1.2') days = 30;
+        else if (version === 'v1.1') days = 90;
+        else if (version === 'v1.2') days = 30;
 
         const expiry = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
         
-        await updateDoc(userRef, {
-            [`trials.${version}`]: expiry.toISOString()
-        });
+        // Use setDoc with merge to ensure 'trials' object exists
+        await setDoc(userRef, {
+            trials: {
+                ...trials,
+                [version]: expiry.toISOString()
+            }
+        }, { merge: true });
     },
 
     redeemCode: async (uid: string, code: string) => {

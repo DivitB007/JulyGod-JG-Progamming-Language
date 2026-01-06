@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { Playground } from './components/Playground';
@@ -74,22 +74,16 @@ function App() {
     return () => { unsubscribeAuth(); if (unsubscribeProfile) unsubscribeProfile(); };
   }, []);
 
-  // Compute Unlocked Status Reactively
-  const isVersionUnlocked = useMemo(() => (v: JGVersion) => {
-      // Free Versions
+  // Compute Unlocked Status - Direct check to ensure no memoization staleness
+  const checkIsUnlocked = (v: JGVersion) => {
       if (v === 'v1.0' || v === 'v0.1-remastered') return true;
-      
-      // Permanent Purchase
       if (unlockedVersions.includes(v)) return true;
-      
-      // Active Trial Access
       if (userProfile?.trials?.[v]) {
           const expiry = new Date(userProfile.trials[v]);
           return expiry.getTime() > Date.now();
       }
-      
       return false;
-  }, [unlockedVersions, userProfile]);
+  };
 
   // Remote Unlock Logic for Admin
   useEffect(() => {
@@ -183,7 +177,7 @@ function App() {
         {showUnlockModal && <UnlockModal version={showUnlockModal} isPending={pendingRequests.some(r => r.version === showUnlockModal)} userProfile={userProfile} onClose={() => setShowUnlockModal(null)} onSubmitRequest={async (utr) => { await dbService.submitPayment(user.uid, showUnlockModal!, utr, user.displayName || 'User'); }} />}
         <main className="flex-grow flex flex-col pt-16">
           {currentView === 'home' && <Hero onGetStarted={() => setView('playground')} onReadDocs={() => setView('docs')} />}
-          {currentView === 'playground' && <Playground jgVersion={jgVersion} userProfile={userProfile} isUnlocked={isVersionUnlocked(jgVersion)} onRequestUnlock={() => user ? setShowUnlockModal(jgVersion) : setShowAuthModal(true)} />}
+          {currentView === 'playground' && <Playground jgVersion={jgVersion} userProfile={userProfile} isUnlocked={checkIsUnlocked(jgVersion)} onRequestUnlock={() => user ? setShowUnlockModal(jgVersion) : setShowAuthModal(true)} />}
           {currentView === 'docs' && <Documentation jgVersion={jgVersion} />}
         </main>
         <Footer />
