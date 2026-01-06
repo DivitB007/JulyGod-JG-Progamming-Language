@@ -1,11 +1,12 @@
+
 import React from 'react';
-import { Terminal, Code2, Book, Menu, X, ChevronDown, Lock, Unlock, Layers, LogIn, User, LogOut, Zap } from 'lucide-react';
+import { Terminal, Code2, Book, Menu, X, ChevronDown, Lock, Unlock, Layers, LogIn, User, LogOut, Zap, Newspaper, Shield, Crown } from 'lucide-react';
 import { JGVersion } from '../App';
 import { authService, UserProfile } from '../services/firebase';
 
 interface NavbarProps {
-    currentView: 'home' | 'playground' | 'docs';
-    setView: (view: 'home' | 'playground' | 'docs') => void;
+    currentView: 'home' | 'playground' | 'docs' | 'news' | 'admin';
+    setView: (view: 'home' | 'playground' | 'docs' | 'news' | 'admin') => void;
     jgVersion: JGVersion;
     setJgVersion: (v: JGVersion) => void;
     unlockedVersions: JGVersion[];
@@ -14,13 +15,20 @@ interface NavbarProps {
     onOpenAuth: () => void;
 }
 
+const ADMIN_EMAIL = "Divitbansal016@gmail.com";
+
 export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion, setJgVersion, unlockedVersions, user, userProfile, onOpenAuth }) => {
     const [isMenuOpen, setIsMenuOpen] = React.useState(false);
+    
+    // FIX: Enhanced robust check for Admin Panel visibility (Case-insensitive)
+    const isAdmin = (user?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()) || 
+                    (userProfile?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase());
 
     const navItems = [
         { id: 'home', label: 'Home', icon: Terminal },
         { id: 'playground', label: 'Playground', icon: Code2 },
         { id: 'docs', label: 'Specification', icon: Book },
+        { id: 'news', label: 'News', icon: Newspaper },
     ] as const;
 
     const getDisplayVersion = (v: JGVersion) => {
@@ -44,6 +52,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
     };
 
     const isLocked = (v: JGVersion) => {
+        if (isAdmin) return false;
         if (isPermanent(v)) return false;
         const days = getTrialRemainingDays(v);
         return days === null || days <= 0;
@@ -81,16 +90,17 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
                     </span>
                     <div className="flex items-center gap-1.5 mt-0.5">
                         <span className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">{price}</span>
-                        {!owned && trialDays !== null && trialDays > 0 && (
+                        {!owned && trialDays !== null && trialDays > 0 && !isAdmin && (
                             <span className="text-[9px] bg-jg-primary/20 text-jg-primary px-1.5 py-0.5 rounded font-bold border border-jg-primary/30 animate-pulse">
                                 {trialDays}d TRIAL
                             </span>
                         )}
-                        {!owned && trialDays === 0 && userProfile?.trials?.[v] && (
+                        {!owned && trialDays === 0 && userProfile?.trials?.[v] && !isAdmin && (
                             <span className="text-[9px] bg-red-500/10 text-red-400 px-1.5 py-0.5 rounded font-bold border border-red-500/30">
                                 EXPIRED
                             </span>
                         )}
+                        {isAdmin && <span className="text-[8px] bg-jg-accent/10 text-jg-accent border border-jg-accent/30 px-1 rounded uppercase font-black">Admin Access</span>}
                     </div>
                 </div>
                 
@@ -135,6 +145,24 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
                                     {item.label}
                                 </button>
                             ))}
+                            
+                            {/* THE GLOWING ADMIN BUTTON - Reinforcement */}
+                            {isAdmin && (
+                                <button
+                                    onClick={() => setView('admin')}
+                                    className={`relative flex items-center px-5 py-2 rounded-full text-[10px] font-black tracking-[0.2em] uppercase transition-all duration-300 group ml-2 animate-admin-glow border-2 ${
+                                        currentView === 'admin'
+                                            ? 'bg-white text-jg-dark border-white shadow-[0_0_20px_white]'
+                                            : 'bg-jg-accent text-white border-jg-accent/50'
+                                    }`}
+                                >
+                                    <Shield className={`w-4 h-4 mr-2 ${currentView !== 'admin' ? 'animate-pulse' : ''}`} />
+                                    <span>Control Room</span>
+                                    {currentView !== 'admin' && (
+                                        <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-jg-dark animate-bounce"></span>
+                                    )}
+                                </button>
+                            )}
                         </div>
 
                         <div className="relative group ml-4">
@@ -170,6 +198,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
                                         <div className="px-2 py-1 mb-2 border-b border-gray-800">
                                             <p className="text-xs text-white font-bold truncate">{userProfile?.displayName || user.displayName || 'User'}</p>
                                             <p className="text-[10px] text-gray-500 truncate">{user.email}</p>
+                                            {isAdmin && <p className="text-[8px] text-jg-accent font-black uppercase tracking-tighter mt-0.5 flex items-center gap-1"><Crown className="w-2 h-2" /> Owner</p>}
                                         </div>
                                         <button onClick={handleLogout} className="w-full text-left px-2 py-1.5 text-xs text-red-400 hover:bg-gray-800 rounded flex items-center gap-2">
                                             <LogOut className="w-3 h-3" /> Sign Out
@@ -218,40 +247,14 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
                                 {item.label}
                             </button>
                         ))}
-                    </div>
-                    
-                    <div className="px-4 py-3 border-t border-gray-800">
-                        {user ? (
-                            <div className="flex justify-between items-center">
-                                <div className="flex items-center gap-2">
-                                     <div className="w-8 h-8 rounded-full bg-jg-primary/20 flex items-center justify-center">
-                                        <User className="w-4 h-4 text-jg-primary" />
-                                    </div>
-                                    <span className="text-sm text-white">{userProfile?.displayName || user.displayName}</span>
-                                </div>
-                                <button onClick={handleLogout} className="text-xs text-red-400 border border-red-900/50 px-2 py-1 rounded bg-red-900/10">Sign Out</button>
-                            </div>
-                        ) : (
-                             <button 
-                                onClick={() => { setIsMenuOpen(false); onOpenAuth(); }}
-                                className="w-full py-2 bg-jg-primary text-white rounded font-bold text-sm flex items-center justify-center gap-2"
+                        {isAdmin && (
+                            <button
+                                onClick={() => { setView('admin'); setIsMenuOpen(false); }}
+                                className="flex items-center w-full px-4 py-3 rounded-md text-base font-bold text-jg-accent bg-jg-accent/10 border-2 border-jg-accent animate-admin-glow"
                             >
-                                <LogIn className="w-4 h-4" /> Sign In / Sign Up
+                                <Shield className="w-5 h-5 mr-3" /> Control Room
                             </button>
                         )}
-                    </div>
-
-                    <div className="border-t border-gray-800 p-2">
-                        <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-2">
-                            <Layers className="w-3 h-3" /> Select Version
-                        </div>
-                        <div className="space-y-1">
-                            <VersionOption v="v1.2" label="V1.2 Final" price="₹1400 Flagship" />
-                            <VersionOption v="v1.1" label="V1.1 Interactive" price="₹800" />
-                            <VersionOption v="v1.0" label="V1.0 Stable" price="3 Free/Day" />
-                            <VersionOption v="v0.1-remastered" label="V0.1 Remastered" price="Free" />
-                            <VersionOption v="v0" label="V0 Legacy" price="₹20" />
-                        </div>
                     </div>
                 </div>
             )}

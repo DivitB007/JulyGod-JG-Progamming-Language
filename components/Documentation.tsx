@@ -1,13 +1,14 @@
+
 import React from 'react';
 import { JGVersion } from '../App';
-import { Book, Code, AlertTriangle, Lightbulb, Terminal, Layers } from 'lucide-react';
+import { Book, Code, AlertTriangle, Lightbulb, Terminal, Layers, ShieldCheck, FileText, Bookmark } from 'lucide-react';
 
 interface DocProps {
     jgVersion: JGVersion;
 }
 
 const Section: React.FC<{ title: string; icon?: React.ElementType; children: React.ReactNode }> = ({ title, icon: Icon, children }) => (
-    <div className="mb-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="mb-12 animate-in fade-in slide-in-from-bottom-4 duration-500 relative">
         <h3 className="text-2xl font-bold text-white mb-6 border-l-4 border-jg-primary pl-4 flex items-center gap-3">
             {Icon && <Icon className="w-6 h-6 text-jg-primary" />}
             {title}
@@ -18,15 +19,17 @@ const Section: React.FC<{ title: string; icon?: React.ElementType; children: Rea
     </div>
 );
 
-const SubSection: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
-    <div className="mt-8 mb-6 p-6 bg-jg-surface/30 rounded-xl border border-gray-800">
+// Added note?: string to SubSection props to fix the error on line 95
+const SubSection: React.FC<{ title: string; children: React.ReactNode; note?: string }> = ({ title, children, note }) => (
+    <div className="mt-8 mb-6 p-6 bg-jg-surface/30 rounded-xl border border-gray-800 backdrop-blur-sm">
         <h4 className="text-xl font-semibold text-jg-accent mb-4 flex items-center">
-            <span className="w-2 h-2 rounded-full bg-jg-accent mr-3"></span>
+            <span className="w-2 h-2 rounded-full bg-jg-accent mr-3 shadow-[0_0_8px_rgba(139,92,246,0.6)]"></span>
             {title}
         </h4>
         <div className="text-gray-400 space-y-3">
             {children}
         </div>
+        {note && <div className="mt-4 px-4 py-2 bg-jg-accent/10 text-xs text-jg-accent border-l-2 border-jg-accent italic">💡 {note}</div>}
     </div>
 );
 
@@ -49,7 +52,6 @@ const CodeBlock: React.FC<{ children: string; label?: string; note?: string }> =
 
 export const Documentation: React.FC<DocProps> = ({ jgVersion }) => {
     
-    // Helper to determine render level
     const getVersionRank = (v: JGVersion): number => {
         switch(v) {
             case 'v0': return 0;
@@ -63,7 +65,6 @@ export const Documentation: React.FC<DocProps> = ({ jgVersion }) => {
 
     const currentRank = getVersionRank(jgVersion);
 
-    // --- V0 CONTENT ---
     const renderV0Docs = () => (
         <>
             <Section title="V0: The Legacy Script" icon={Terminal}>
@@ -93,24 +94,20 @@ area = PI * radius * radius
 say "Area is: " + area`}</CodeBlock>
                 </SubSection>
 
-                <SubSection title="Recursion (No Loops)">
-                    <p>V0 does not have native <code>repeat</code> loops. Iteration must be done via recursion.</p>
-                    <CodeBlock label="Recursion Example" note="Loops were added in V0.1">{`create function count_down takes n
-    say n
-    
-    when n greater 0
-        // Recursive call with parentheses
-        count_down(n - 1) 
+                <SubSection title="Function Calls" note="In V0, calls are simple.">
+                    <p>Execute logic by name with optional arguments in parentheses.</p>
+                    <CodeBlock label="V0 Calls">{`create function check_access takes age
+    when age greater_equal 18
+        say "Access Granted"
     end
 end
 
-count_down(5)`}</CodeBlock>
+check_access(21) // Valid only in V0`}</CodeBlock>
                 </SubSection>
             </Section>
         </>
     );
 
-    // --- V0.1 CONTENT ---
     const renderV01Docs = () => (
         <>
             <Section title="V0.1: The Remastered Standard" icon={Layers}>
@@ -152,166 +149,90 @@ final scores = list contains 95 and 80 and 100
 final user = map has name as "Divit" and role as "Admin"
 
 // Accessing Data
-say user get "name"  // Output: Divit
-say scores get 0     // Output: 95`}</CodeBlock>
-                </SubSection>
-
-                <SubSection title="Native Loops">
-                    <p>Recursion is no longer necessary for basic iteration.</p>
-                    <CodeBlock label="Loops">{`repeat 5 times
-    say "Looping..."
-end`}</CodeBlock>
+say user get "name"
+say scores get 0`}</CodeBlock>
                 </SubSection>
             </Section>
         </>
     );
 
-    // --- V1.0 CONTENT ---
     const renderV1Docs = () => (
         <>
             <Section title="V1.0: Object Oriented Architecture" icon={Layers}>
                 <p>
                     <strong>Version 1.0 Stable</strong> transforms JG into a fully Object-Oriented language. 
-                    It introduces Classes, Encapsulation (Public/Private), and Instantiation, making it suitable for complex system design.
+                    It introduces Classes, Encapsulation, and Instantiation.
                 </p>
             </Section>
 
             <Section title="Class Syntax" icon={Code}>
                 <SubSection title="Defining Classes">
-                    <p>
-                        Classes are defined using <code>Name is a class</code>. 
-                        Properties must be explicitly marked as <code>public</code> or <code>private</code>.
-                    </p>
+                    <p>Classes are defined using <code>Name is a class</code>. Properties must be marked <code>public</code> or <code>private</code>.</p>
                     <CodeBlock label="Class Structure">{`BankAccount is a class
     private balance
     public owner
 
-    // Constructor (called on 'new')
     create function init takes owner_name and start_amount
         owner = owner_name
         balance = start_amount
     end
-
-    create function deposit takes amount
-        balance = balance + amount
-        say "Deposited: " + amount
-    end
 end`}</CodeBlock>
-                </SubSection>
-
-                <SubSection title="Instantiation & Usage">
-                    <p>Use the <code>new</code> keyword to create objects. Access properties with <code>get</code> and modify with <code>set</code>.</p>
-                    <CodeBlock label="Objects in Action">{`start program
-    // Create Object
-    my_account = new BankAccount takes "Divit" and 500
-    
-    // Call Method
-    call my_account deposit takes 100
-    
-    // Read Public Property
-    say "Owner: " + my_account get owner
-    
-    // Private Access Error
-    // say my_account get balance  <-- This would fail!
-end program`}</CodeBlock>
                 </SubSection>
             </Section>
         </>
     );
 
-    // --- V1.1 CONTENT ---
     const renderV11Docs = () => (
         <>
             <Section title="V1.1: Interactive IO" icon={Terminal}>
-                <p>
-                    <strong>Version 1.1</strong> breaks the static nature of previous versions by introducing the <code>Input</code> library.
-                    This allows programs to pause execution and accept user data at runtime.
-                </p>
+                <p><strong>Version 1.1</strong> introduces the <code>Input</code> library for runtime data collection.</p>
             </Section>
-
             <Section title="The Input Library" icon={Book}>
-                <SubSection title="Importing & Usage">
-                    <p>Libraries must be imported explicitly at the top of the file.</p>
-                    <CodeBlock label="Imports">{`import library Input as In
+                <CodeBlock label="Imports">{`import library Input as In
 
 start program
-    say "System initialized."
-    
-    // Pause for text input
     name = In.ask "Enter your username:"
-    
-    // Pause for numeric input (validates automatically)
-    age = In.ask number "Enter your age:"
-    
     say "User " + name + " registered."
 end program`}</CodeBlock>
-                </SubSection>
-
-                <SubSection title="Validation">
-                    <p>The <code>ask number</code> command automatically ensures the user enters a valid number. If they enter text, the system throws a Type Error immediately.</p>
-                </SubSection>
             </Section>
         </>
     );
 
-    // --- V1.2 CONTENT ---
     const renderV12Docs = () => (
         <>
             <Section title="V1.2: Industrial Grade Strictness" icon={AlertTriangle}>
-                <p>
-                    <strong>Version 1.2 Final</strong> is the most rigorous version of JG. It introduces <strong>Static Typing</strong> primitives (`int`, `decimal`, `bool`) 
-                    and strict Boolean logic (`True`/`False`). It is designed for mission-critical software where type errors must be caught early.
-                </p>
+                <p><strong>Version 1.2 Final</strong> introduces <strong>Static Typing</strong> primitives and strict Boolean logic.</p>
             </Section>
-
             <Section title="Type System" icon={Code}>
                 <SubSection title="Primitive Types">
-                    <p>Variables can now be explicitly typed. The compiler enforces these types during assignment.</p>
                     <CodeBlock label="Explicit Typing">{`start program
-    // Integer: Whole numbers only
     int users = 100
-    
-    // Decimal: Floating point numbers
     decimal price = 49.99
-    
-    // Boolean: Strict PascalCase
     bool is_active = True
-    
-    // Dynamic: Still supported if type omitted
-    any_value = "Hello"
 end program`}</CodeBlock>
-                </SubSection>
-
-                <SubSection title="Type Conversion">
-                    <p>Implicit casting is banned. You must use the <code>convert</code> syntax to transform data types.</p>
-                    <CodeBlock label="Casting" note="Prevents data loss accidents">{`start program
-    decimal raw_score = 95.7
-    
-    // Explicitly cast to int (floors value)
-    int final_score = convert raw_score to int
-    
-    say final_score  // Output: 95
-end program`}</CodeBlock>
-                </SubSection>
-
-                 <SubSection title="Strict Booleans">
-                    <p>In V1.2, <code>true</code> and <code>false</code> (lowercase) are illegal. You must use <code>True</code> and <code>False</code>.</p>
-                     <CodeBlock label="Boolean Logic">{`bool ready = True
-
-when ready equals True
-    say "Go!"
-end`}</CodeBlock>
                 </SubSection>
             </Section>
         </>
     );
 
     return (
-        <div className="min-h-screen pt-24 pb-20 px-4 sm:px-6 lg:px-8 bg-jg-dark animate-in fade-in duration-500">
-            <div className="max-w-5xl mx-auto">
-                {/* Dynamic Header */}
+        <div className="min-h-screen pt-24 pb-20 px-4 sm:px-6 lg:px-8 bg-jg-dark animate-in fade-in duration-500 relative overflow-hidden">
+            {/* Blueprint Grid Background */}
+            <div className="absolute inset-0 z-0 opacity-10 pointer-events-none bg-[linear-gradient(to_right,#3b82f6_1px,transparent_1px),linear-gradient(to_bottom,#3b82f6_1px,transparent_1px)] bg-[size:100px_100px]"></div>
+            
+            <div className="max-w-5xl mx-auto relative z-10">
+                {/* Foundational Specification Badge */}
+                <div className="flex justify-center mb-8">
+                    <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-bold uppercase tracking-[0.2em]">
+                        <ShieldCheck className="w-3.5 h-3.5" /> Foundational Specification v0.1-Baseline
+                    </div>
+                </div>
+
                 <div className="mb-16 text-center">
-                    <h2 className="text-5xl font-extrabold text-white mb-6 tracking-tight">Language Specification</h2>
+                    <h2 className="text-5xl font-extrabold text-white mb-6 tracking-tight flex items-center justify-center gap-4">
+                        <FileText className="w-12 h-12 text-jg-primary" />
+                        Language Specification
+                    </h2>
                     <div className="inline-flex items-center px-6 py-3 rounded-full bg-jg-surface border border-jg-surfaceHighlight shadow-2xl">
                          <span className={`w-3 h-3 rounded-full mr-3 animate-pulse ${
                              jgVersion === 'v1.2' ? 'bg-pink-500 shadow-[0_0_10px_rgba(236,72,153,0.5)]' :
@@ -330,7 +251,27 @@ end`}</CodeBlock>
                     </div>
                 </div>
 
-                {/* Cumulative Rendering logic */}
+                {/* Core Philosophy Section - Interjected for Spec Baseline */}
+                <div className="mb-20 p-8 rounded-2xl bg-gradient-to-br from-jg-surface to-jg-dark border border-white/5 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                        <Bookmark className="w-32 h-32 text-jg-primary" />
+                    </div>
+                    <h3 className="text-2xl font-bold text-white mb-4 flex items-center gap-3">
+                        <Lightbulb className="w-6 h-6 text-yellow-400" />
+                        Guiding Principles
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-gray-400 text-base">
+                        <div className="space-y-3">
+                            <p><strong>1. Maximum Legibility:</strong> JulyGod is optimized for reading, not just writing. Code should resemble technical documentation.</p>
+                            <p><strong>2. Low Cognitive Load:</strong> By removing braces and semicolons, we eliminate common syntax errors that plague beginners and slow down pros.</p>
+                        </div>
+                        <div className="space-y-3">
+                            <p><strong>3. Educational Diagnostics:</strong> Error messages in JG are designed to teach language mechanics, not just report failures.</p>
+                            <p><strong>4. Cross-Platform First:</strong> JG targets Python, C++, and Bytecode to ensure logic is portable across the stack.</p>
+                        </div>
+                    </div>
+                </div>
+
                 <div className="space-y-12">
                     {currentRank >= 0 && renderV0Docs()}
                     {currentRank >= 1 && renderV01Docs()}
@@ -339,11 +280,10 @@ end`}</CodeBlock>
                     {currentRank >= 4 && renderV12Docs()}
                 </div>
 
-                {/* Footer Note */}
                 <div className="mt-20 border-t border-gray-800 pt-8 text-center text-gray-500">
                     <p className="flex items-center justify-center gap-2">
-                        <Lightbulb className="w-4 h-4" />
-                        Tip: Documentation is cumulative. Higher versions include features from previous versions.
+                        <Bookmark className="w-4 h-4" />
+                        This document serves as the Baseline Specification for JulyGod Development.
                     </p>
                 </div>
             </div>

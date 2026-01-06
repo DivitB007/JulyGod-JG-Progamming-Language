@@ -1,13 +1,16 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { Playground } from './components/Playground';
 import { Documentation } from './components/Documentation';
+import { News } from './components/News';
 import { Footer } from './components/Footer';
 import { UnlockModal } from './components/UnlockModal';
 import { AuthModal } from './components/AuthModal';
+import { AdminDashboard } from './components/AdminDashboard';
 import { authService, dbService, UserProfile } from './services/firebase';
-import { AlertTriangle, ExternalLink, X, ShieldAlert, Loader2, CheckCircle2, ShieldCheck, MailWarning, Trash2 } from 'lucide-react';
+import { AlertTriangle, ExternalLink, X, ShieldAlert, Loader2, CheckCircle2, ShieldCheck, MailWarning, Trash2, ShieldX } from 'lucide-react';
 
 export type JGVersion = 'v0' | 'v0.1-remastered' | 'v1.0' | 'v1.1' | 'v1.2';
 const ADMIN_EMAIL = "Divitbansal016@gmail.com";
@@ -24,7 +27,7 @@ const AmbientBackground = () => (
 );
 
 function App() {
-  const [currentView, setView] = useState<'home' | 'playground' | 'docs'>('home');
+  const [currentView, setView] = useState<'home' | 'playground' | 'docs' | 'news' | 'admin'>('home');
   const [jgVersion, setJgVersion] = useState<JGVersion>('v1.2');
   const [user, setUser] = useState<any>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -57,6 +60,8 @@ function App() {
                 },
                 (error) => {
                     if (error.code === 'permission-denied') {
+                        // Admin bypass: if the user is the owner, ignore the error and keep trying
+                        if (currentUser.email === ADMIN_EMAIL) return;
                         setDbError({ 
                             message: "Database Access Restricted. Check Security Rules.", 
                             type: 'rules', 
@@ -69,12 +74,14 @@ function App() {
             setUnlockedVersions(['v0.1-remastered']);
             setPendingRequests([]);
             setUserProfile(null);
+            if (currentView === 'admin') setView('home');
         }
     });
     return () => { unsubscribeAuth(); if (unsubscribeProfile) unsubscribeProfile(); };
-  }, []);
+  }, [currentView]);
 
   const checkIsUnlocked = (v: JGVersion) => {
+      if (user?.email === ADMIN_EMAIL || userProfile?.email === ADMIN_EMAIL) return true;
       if (v === 'v1.0' || v === 'v0.1-remastered') return true;
       if (unlockedVersions.includes(v)) return true;
       if (userProfile?.trials?.[v]) {
@@ -88,10 +95,9 @@ function App() {
     const handleUrlAction = async () => {
       const queryParams = new URLSearchParams(window.location.search);
       const hash = window.location.hash;
-      const hashParams = new URLSearchParams(hash.includes('?') ? hash.split('?')[1] : '');
       const action = queryParams.get('action') || (hash.includes('action=') ? hash.split('action=')[1].split('&')[0] : null);
-      const targetUid = queryParams.get('target_uid') || hashParams.get('target_uid');
-      const targetVer = (queryParams.get('target_ver') || hashParams.get('target_ver')) as JGVersion;
+      const targetUid = queryParams.get('target_uid') || (hash.includes('target_uid=') ? hash.split('target_uid=')[1].split('&')[0] : null);
+      const targetVer = (queryParams.get('target_ver') || (hash.includes('target_ver=') ? hash.split('target_ver=')[1].split('&')[0] : null)) as JGVersion;
 
       if ((action === 'unlock' || action === 'deny') && targetUid && targetVer && !hasProcessedRef.current) {
         if (!user) {
@@ -135,11 +141,30 @@ function App() {
     handleUrlAction();
   }, [user]);
 
+  const isBannedAndPastDate = userProfile?.isBanned && userProfile.banDate && new Date(userProfile.banDate).getTime() < Date.now();
+
+  if (isBannedAndPastDate) {
+      return (
+          <div className="min-h-screen bg-black flex items-center justify-center p-6 text-center">
+              <div className="max-w-md space-y-6">
+                  <div className="w-24 h-24 bg-red-500/10 rounded-full flex items-center justify-center mx-auto border-2 border-red-500 animate-pulse">
+                      <ShieldX className="w-12 h-12 text-red-500" />
+                  </div>
+                  <h1 className="text-4xl font-black text-white uppercase tracking-tighter">Access Revoked</h1>
+                  <p className="text-gray-400 leading-relaxed">Your JulyGod profile has been permanently suspended by the Owner.</p>
+                  <div className="bg-red-500/5 p-4 rounded-xl border border-red-500/20 text-red-400 text-sm font-mono">
+                      Reason: {userProfile.banReason || "Policy Violation"}
+                  </div>
+                  <button onClick={() => authService.signOut()} className="px-8 py-3 bg-white text-black font-bold rounded-lg">Sign Out</button>
+              </div>
+          </div>
+      );
+  }
+
   return (
     <div className="min-h-screen text-jg-text font-sans antialiased relative selection:bg-jg-accent selection:text-white">
       <AmbientBackground />
 
-      {/* Admin Task Overlay */}
       {adminTask.status !== 'idle' && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-3xl animate-in fade-in duration-300">
             <div className={`p-12 rounded-[2rem] border-2 flex flex-col items-center gap-8 max-w-sm text-center shadow-2xl ${
@@ -170,7 +195,6 @@ function App() {
         </div>
       )}
 
-      {/* System Notification Overlay for Users */}
       {userProfile?.systemMessage && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] w-full max-w-md px-4 animate-in slide-in-from-top-4 duration-500">
             <div className="bg-jg-surface border-2 border-orange-500/50 p-6 rounded-2xl shadow-2xl flex items-start gap-4">
@@ -206,6 +230,8 @@ function App() {
           {currentView === 'home' && <Hero onGetStarted={() => setView('playground')} onReadDocs={() => setView('docs')} />}
           {currentView === 'playground' && <Playground jgVersion={jgVersion} userProfile={userProfile} isUnlocked={checkIsUnlocked(jgVersion)} onRequestUnlock={() => user ? setShowUnlockModal(jgVersion) : setShowAuthModal(true)} />}
           {currentView === 'docs' && <Documentation jgVersion={jgVersion} />}
+          {currentView === 'news' && <News isAdmin={user?.email === ADMIN_EMAIL} />}
+          {currentView === 'admin' && <AdminDashboard />}
         </main>
         <Footer />
         {dbError && <div className="fixed bottom-0 left-0 right-0 bg-red-900/90 backdrop-blur-md border-t border-red-500 p-4 z-[100] flex justify-between items-center text-white">

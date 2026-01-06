@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en" class="scroll-smooth">
   <head>
@@ -36,6 +37,7 @@
               'blob': 'blob 7s infinite',
               'fade-in': 'fadeIn 0.5s ease-out forwards',
               'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              'admin-glow': 'adminGlow 3s ease-in-out infinite',
             },
             keyframes: {
               blob: {
@@ -47,6 +49,10 @@
               fadeIn: {
                 '0%': { opacity: '0', transform: 'translateY(10px)' },
                 '100%': { opacity: '1', transform: 'translateY(0)' },
+              },
+              adminGlow: {
+                '0%, 100%': { boxShadow: '0 0 5px #8b5cf6, 0 0 10px #8b5cf6, 0 0 15px #3b82f6' },
+                '50%': { boxShadow: '0 0 15px #8b5cf6, 0 0 30px #8b5cf6, 0 0 45px #3b82f6' },
               }
             }
           }
@@ -97,6 +103,10 @@
 
       .code-scroll::-webkit-scrollbar-corner {
         background: transparent;
+      }
+      
+      .animate-admin-glow {
+        animation: adminGlow 2s ease-in-out infinite;
       }
     </style>
 <script type="importmap">

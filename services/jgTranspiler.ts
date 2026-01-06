@@ -56,12 +56,11 @@ const cleanLine = (line: string): string => {
 };
 
 const formatError = (type: string, line: number, message: string, suggestion: string): string => {
-    // line is 0-indexed in logic, so +1 for display. If line is -1, it's a general error.
     const linePrefix = line >= 0 ? `Line ${line + 1}: ` : '';
     return `❌ [${type} Error] ${linePrefix}${message}\n   💡 Tip: ${suggestion}`;
 };
 
-// --- String Masking (Prevents syntax collision inside strings) ---
+// --- String Masking ---
 const maskStrings = (str: string): { masked: string, literals: string[] } => {
     const literals: string[] = [];
     const masked = str.replace(/"(?:[^"\\]|\\.)*"/g, (match) => {
@@ -77,30 +76,26 @@ const unmaskStrings = (str: string, literals: string[]): string => {
 
 // --- Operator Mapping ---
 const mapOperators = (expr: string, version: JGVersion): string => {
-    // Standard JG Operators
+    // Use word boundaries \b to prevent accidental partial matches
     let processed = expr
-        .replace(/\sgreater_equal\s/g, ' >= ')
-        .replace(/\sless_equal\s/g, ' <= ')
-        .replace(/\snot_equals\s/g, ' !== ')
-        .replace(/\sequals\s/g, ' === ')
-        .replace(/\sgreater\s/g, ' > ')
-        .replace(/\sless\s/g, ' < ')
-        .replace(/\sand\s/g, ' && ')
-        .replace(/\sor\s/g, ' || ');
+        .replace(/\bgreater_equal\b/g, ' >= ')
+        .replace(/\bless_equal\b/g, ' <= ')
+        .replace(/\bnot_equals\b/g, ' !== ')
+        .replace(/\bequals\b/g, ' === ')
+        .replace(/\bgreater\b/g, ' > ')
+        .replace(/\bless\b/g, ' < ')
+        .replace(/\band\b/g, ' && ')
+        .replace(/\bor\b/g, ' || ');
 
-    // V1.2 Strict Boolean Logic
     if (version === 'v1.2') {
-        // Map True/False to JS true/false
         processed = processed.replace(/\bTrue\b/g, 'true').replace(/\bFalse\b/g, 'false');
     } else {
-        // Legacy versions use lower case
-        processed = processed.replace(/\strue\b/g, ' true ').replace(/\sfalse\b/g, ' false ');
+        processed = processed.replace(/\btrue\b/g, ' true ').replace(/\bfalse\b/g, ' false ');
     }
 
     return processed;
 };
 
-// Use AsyncFunction constructor to allow await inside evaluated code
 const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
 
 // --- Evaluation Engine ---
@@ -114,51 +109,42 @@ const evaluateExpressionAsync = async (
   
   const context: Record<string, any> = {};
   
-  // 1. Flatten Scope
   for (const scope of scopeChain) {
     for (const [key, val] of scope.entries()) {
       context[key] = val.value;
     }
   }
 
-  // 1.5 Add Libraries
   if ((version === 'v1.1' || version === 'v1.2') && libraries) {
       for (const [alias, libObj] of libraries.entries()) {
           context[alias] = libObj;
       }
   }
   
-  // 2. Add Instance Context (Implicit 'this')
   if ((version === 'v1.0' || version === 'v1.1' || version === 'v1.2') && instanceCtx) {
       for (const [key, val] of Object.entries(instanceCtx.properties)) {
-          // Local variables shadow instance properties
           if (!(key in context)) {
               context[key] = val;
           }
       }
   }
 
-  // 3. Mask Strings
   const { masked, literals } = maskStrings(rawExpr);
   let jsExpr = masked;
 
-  // 3.5 V1.2 Strictness Check (must happen on masked string to ignore contents)
   if (version === 'v1.2') {
       if (/\btrue\b/.test(jsExpr) || /\bfalse\b/.test(jsExpr)) {
           throw new Error("SYNTAX_ERROR|'true' and 'false' are banned in V1.2. Use 'True' and 'False'.");
       }
   }
 
-  // 4. JG Syntax Transformations
   if (version === 'v1.1' || version === 'v1.2') {
-       // Input Library Transformations
        jsExpr = jsExpr.replace(/(\w+)\.ask\s+number\s+(__STR_\d+__)/g, 'await $1.askNumber($2)');
        jsExpr = jsExpr.replace(/(\w+)\.ask\s+(__STR_\d+__)/g, 'await $1.ask($2)');
        jsExpr = jsExpr.replace(/(\w+)\.read\s+number/g, 'await $1.readNumber()');
        jsExpr = jsExpr.replace(/(\w+)\.read/g, 'await $1.read()');
   }
 
-  // V1.2 Type Conversion Syntax: convert x to type
   if (version === 'v1.2') {
       jsExpr = jsExpr.replace(/convert\s+(.+?)\s+to\s+(int|long decimal|decimal|bool)/g, (match, val, type) => {
           switch(type) {
@@ -171,23 +157,17 @@ const evaluateExpressionAsync = async (
       });
   }
 
-  // Property Access
   if (version !== 'v0' && version !== 'v0.1-remastered') {
       jsExpr = jsExpr.replace(/([a-zA-Z_]\w*)\s+get\s+([a-zA-Z_]\w*)/g, '$1.properties.$2');
   } 
   
-  // Map/List Access V0.1
   if (version === 'v0.1-remastered') {
       jsExpr = jsExpr.replace(/([a-zA-Z_]\w*)\s+get\s+((?:__STR_\d+__)|[a-zA-Z_]\w*|\d+)/g, '$1[$2]');
   }
 
-  // 5. Map Operators
   jsExpr = mapOperators(jsExpr, version);
-
-  // 6. Unmask Strings
   jsExpr = unmaskStrings(jsExpr, literals);
 
-  // 7. Execution
   try {
     const func = new AsyncFunction(...Object.keys(context), `return ${jsExpr};`);
     const result = await func(...Object.values(context));
@@ -204,7 +184,6 @@ const evaluateExpressionAsync = async (
     if (e.message.includes('is not a function')) {
         throw new Error(`TYPE_ERROR|Attempted to call something that is not a function.`);
     }
-    // Pass through custom syntax errors
     if (e.message.includes('|')) throw e;
     throw new Error(`MATH_ERROR|${e.message}`);
   }
@@ -220,9 +199,9 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
   const loadedLibraries = new Map<string, any>(); 
 
   let hasError = false;
-  // Wrapper to stop execution on error
+  let useLibraryOriginalFound = false;
   const logError = (type: string, line: number, msg: string, sugg: string) => {
-      if (hasError) return; // Only show first error
+      if (hasError) return;
       callbacks.onError(formatError(type, line, msg, sugg));
       hasError = true;
   }
@@ -240,7 +219,11 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
 
     if (!line) continue;
 
-    // Library Import
+    if (line === 'use library original') {
+        useLibraryOriginalFound = true;
+        continue;
+    }
+
     if ((version === 'v1.1' || version === 'v1.2') && line.startsWith('import library')) {
         const match = line.match(/^import\s+library\s+([a-zA-Z_]\w*)\s+as\s+([a-zA-Z_]\w*)$/);
         if (match) {
@@ -271,8 +254,6 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
              logError("Syntax", lineNum, "Invalid import statement.", "Format: import library Name as Alias");
         }
     }
-
-    // Program Structure
     else if (line === 'start program') {
         if (version === 'v0') { logError("Syntax", lineNum, "'start program' is not used in V0.", "Remove it or upgrade version."); continue; }
         if (mainProgramStart !== -1) { logError("Structure", lineNum, "Multiple 'start program' blocks defined.", "You can only have one entry point."); continue; }
@@ -287,8 +268,6 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
             logError("Structure", lineNum, "Unexpected 'end program'.", "Check your block nesting.");
         }
     }
-
-    // Class Definition
     else if (version !== 'v0' && version !== 'v0.1-remastered' && line.includes(' is a class')) {
         const match = line.match(/^([a-zA-Z_]\w*)\s+is\s+a\s+class(?:\s+extends\s+([a-zA-Z_]\w*))?$/);
         if (match) {
@@ -301,8 +280,6 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
             logError("Syntax", lineNum, "Invalid class declaration.", "Format: Name is a class [extends Parent]");
         }
     }
-
-    // Function Definition
     else if (line.includes('create function')) {
         const match = line.match(/^(?:override\s+)?create\s+function\s+([a-zA-Z_]\w*)\s*(?:takes\s+(.*))?$/);
         if (match) {
@@ -311,8 +288,6 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
             logError("Syntax", lineNum, "Invalid function declaration.", "Format: create function Name [takes param1 and param2]");
         }
     }
-
-    // End Keyword
     else if (line === 'end') {
         if (blockStack.length === 0) {
             logError("Structure", lineNum, "Unexpected 'end' keyword.", "You might have extra ends.");
@@ -330,7 +305,7 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
                     const funcDef: FunctionDef = {
                         name,
                         params,
-                        startLine: block.startLine, // Store actual line number for error reporting
+                        startLine: block.startLine,
                         codeLines: lines.slice(block.startLine + 1, i)
                     };
 
@@ -343,15 +318,11 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
             }
         }
     }
-
-    // Properties
     else if (version !== 'v0' && version !== 'v0.1-remastered' && currentClass && (line.startsWith('public ') || line.startsWith('private '))) {
         const parts = line.split(/\s+/);
         if (parts.length < 2) { logError("Syntax", lineNum, "Invalid property definition.", "Format: public/private name"); continue; }
         currentClass.properties.set(parts[1], { visibility: parts[0] as 'public'|'private' });
     }
-
-    // Inner Control Flow Blocks (just tracking depth)
     else if (line.startsWith('when ') || line.startsWith('repeat ') || line === 'do') {
         blockStack.push({ type: 'control', startLine: i });
     }
@@ -362,22 +333,25 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
     }
   }
 
+  // --- Strict Library Check ---
+  if ((version === 'v0.1-remastered' || version === 'v1.0') && !useLibraryOriginalFound) {
+      logError("Syntax", 0, "'use library original' is mandatory for this version.", "Add it to the top of your code.");
+      return false;
+  }
+
   if (blockStack.length > 0) {
       logError("Structure", blockStack[0].startLine, "Unclosed block detected.", "Add 'end' keywords to close your blocks.");
       return false;
   }
   if (hasError) return false;
 
-
   // --- PASS 2: Runtime Execution ---
-
   const scopeStack: Scope[] = [globalScope];
   let callStackDepth = 0;
   const MAX_DEPTH = 500;
   let steps = 0;
   const MAX_STEPS = 50000;
 
-  // Helper: Find class method (including inherited)
   const findMethod = (clsName: string, methodName: string): FunctionDef | null => {
       let ptr: ClassDef | undefined = classes.get(clsName);
       while (ptr) {
@@ -388,7 +362,6 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
       return null;
   };
 
-  // Helper: Extract inner block logic
   const extractBlock = (lines: string[], startIndex: number): { block: string[], elseBlock: string[], nextIndex: number } => {
       const block: string[] = [];
       const elseBlock: string[] = [];
@@ -431,19 +404,17 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
 
           if (!line) continue;
           if (line.startsWith('//')) continue;
+          if (line === 'use library original') continue;
 
-          // Skip Definitions (already parsed)
           if (line.includes('create function') || line.includes('is a class')) {
               const { nextIndex } = extractBlock(codeLines, j);
               j = nextIndex;
               continue;
           }
 
-          // --- Control Keywords ---
           if (line === 'stop') return "__CMD:STOP__";
           if (line === 'skip') return "__CMD:SKIP__";
 
-          // --- Output ---
           const printMatch = line.match(/^(say|print|log)\s+(.+)$/);
           if (printMatch) {
               try {
@@ -457,8 +428,6 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
               continue;
           }
 
-          // --- Object Creation ---
-          // MOVED UP: Must check before generic assignment because generic assignment matches 'p = ...' and crashes on 'new'
           const newMatch = (version !== 'v0' && version !== 'v0.1-remastered') ? line.match(/^(final\s+)?([a-zA-Z_]\w*)\s*=\s*new\s+([a-zA-Z_]\w*)(?:\s+takes\s+(.+))?$/) : null;
           if (newMatch) {
                const name = newMatch[2];
@@ -500,20 +469,16 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
                continue;
           }
 
-          // --- Variable Assignment / Declaration ---
-          // Updated regex to support optional types: final? (type)? name = value
           if (!line.startsWith('when') && !line.startsWith('set') && line.includes('=')) {
-              // Regex: match optional 'final', optional type (int|decimal|long decimal|bool), name, expression
               const assignMatch = line.match(/^(?:(final)\s+)?(?:(int|long decimal|decimal|bool)\s+)?([a-zA-Z_]\w*)\s*=\s*(.+)$/);
               
               if (assignMatch) {
                   const isFinal = !!assignMatch[1];
-                  const explicitType = assignMatch[2]; // can be undefined
+                  const explicitType = assignMatch[2]; 
                   const name = assignMatch[3];
                   const expr = assignMatch[4];
                   
                   try {
-                      // V0.1 Collections Shim
                       let val: any;
                       if (expr.startsWith('list contains')) {
                            const content = expr.replace('list contains', '').trim();
@@ -530,7 +495,6 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
                           val = await evaluateExpressionAsync(expr, scopeStack, version, instanceCtx, loadedLibraries);
                       }
 
-                      // V1.2 Type Validation
                       let inferredType = 'dynamic';
                       if (explicitType && version === 'v1.2') {
                           inferredType = explicitType;
@@ -552,7 +516,6 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
                           }
                       }
 
-                      // Scope Resolution
                       if (instanceCtx && instanceCtx.properties.hasOwnProperty(name)) {
                            instanceCtx.properties[name] = val;
                       } 
@@ -565,12 +528,7 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
                                       logError("Logic", currentLineNum, `Cannot reassign final variable '${name}'.`, "Remove 'final' if it needs to change.");
                                       return "__ERR__";
                                   }
-                                  // In V1.2, if variable was declared with a type, enforce it on reassignment?
-                                  // The spec implies 'Typed variables enforce type strictly'. 
-                                  // Assuming once typed, always typed.
                                   if (version === 'v1.2' && vDef.type !== 'dynamic') {
-                                      // Check if new value matches old type
-                                      // (Simplified check for demo)
                                       if (vDef.type === 'int' && !Number.isInteger(val)) {
                                           logError("Type", currentLineNum, `Cannot assign non-integer to int '${name}'.`, "");
                                           return "__ERR__";
@@ -599,7 +557,6 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
               }
           }
 
-          // --- Method Call ---
           if (version !== 'v0' && version !== 'v0.1-remastered' && line.startsWith('call ')) {
                const objCall = line.match(/^call\s+([a-zA-Z_]\w*)\s+([a-zA-Z_]\w*)(?:\s+takes\s+(.+))?$/);
                
@@ -651,21 +608,35 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
                }
           }
 
-          // --- Global Function Call ---
-          if (line.startsWith('call ') || (version === 'v0' && !line.startsWith('call'))) {
-              const callMatch = line.match(/^call\s+([a-zA-Z_]\w*)(?:\s+takes\s+(.+))?$/);
+          // --- V0 & General Function Call ---
+          const isV0Call = version === 'v0' && /^([a-zA-Z_]\w*)\s*\((.*)\)$/.test(line);
+          const isCallKeyword = line.startsWith('call ');
+
+          if (isCallKeyword || isV0Call) {
+              let funcName = "";
+              let argsRaw = "";
+
+              if (isV0Call) {
+                  const m = line.match(/^([a-zA-Z_]\w*)\s*\((.*)\)$/);
+                  if (m) { funcName = m[1]; argsRaw = m[2]; }
+              } else {
+                  const m = line.match(/^call\s+([a-zA-Z_]\w*)(?:\s+takes\s+(.+))?$/);
+                  if (m) { funcName = m[1]; argsRaw = m[2]; }
+              }
               
-              if (callMatch) {
-                  const funcName = callMatch[1];
-                  const argsRaw = callMatch[2];
-                  
+              if (funcName) {
                   if (!functions.has(funcName)) {
                       logError("Reference", currentLineNum, `Function '${funcName}' is not defined.`, "Check spelling.");
                       return "__ERR__";
                   }
 
                   const func = functions.get(funcName)!;
-                  const argVals = argsRaw ? await Promise.all(argsRaw.split((version === 'v0' ? ',' : /\sand\s/)).map(a => evaluateExpressionAsync(a.trim(), scopeStack, version, instanceCtx, loadedLibraries))) : [];
+                  const argVals = argsRaw ? await Promise.all(argsRaw.split((isV0Call ? ',' : /\sand\s/)).map(a => evaluateExpressionAsync(a.trim(), scopeStack, version, instanceCtx, loadedLibraries))) : [];
+
+                  if (argVals.length !== func.params.length) {
+                      logError("Type", currentLineNum, `Function '${funcName}' expects ${func.params.length} arguments, got ${argVals.length}.`, "");
+                      return "__ERR__";
+                  }
 
                   const localScope = new Map<string, Variable>();
                   func.params.forEach((p, idx) => localScope.set(p, { name: p, value: argVals[idx], isFinal: false, type: 'any', lineDeclared: -1 }));
@@ -676,26 +647,12 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
                   callStackDepth--;
                   scopeStack.pop();
                   continue;
-              } else if (line.startsWith('call ')) {
-                  // ERROR HANDLING FOR INVALID CALLS (e.g., parens, semicolons)
-                  const isParens = line.includes('(') || line.includes(')');
-                  const isSemi = line.includes(';');
-                  
-                  if (isParens) {
-                      logError("Syntax", currentLineNum, "Parentheses '()' are not allowed in calls.", "Use: call FunctionName [takes arg1 and arg2]");
-                      return "__ERR__";
-                  }
-                  if (isSemi) {
-                      logError("Syntax", currentLineNum, "Semicolons ';' are not allowed.", "Remove the semicolon.");
-                      return "__ERR__";
-                  }
-                  
+              } else if (isCallKeyword) {
                   logError("Syntax", currentLineNum, "Invalid function call format.", "Format: call FunctionName [takes args]");
                   return "__ERR__";
               }
           }
 
-          // --- Setter ---
           if (version !== 'v0' && version !== 'v0.1-remastered' && line.startsWith('set ')) {
               const setMatch = line.match(/^set\s+([a-zA-Z_]\w*)\s+([a-zA-Z_]\w*)\s+to\s+(.+)$/);
               if (setMatch) {
@@ -743,7 +700,6 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
               }
           }
 
-          // --- Conditionals ---
           if (line.startsWith('when ')) {
               const condMatch = line.match(/^when\s+(.+)$/);
               if (condMatch) {
@@ -769,14 +725,12 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
               }
           }
 
-          // --- Loops ---
           if (line.startsWith('repeat ') || line === 'do') {
                const { block, nextIndex } = extractBlock(codeLines, j);
                
                const timesMatch = line.match(/^repeat\s+(\d+|[a-zA-Z_]\w*)\s+times$/);
                const untilMatch = line.match(/^repeat\s+until\s+(.+)$/);
                
-               const prevJ = j;
                j = nextIndex; 
 
                if (timesMatch) {
@@ -806,7 +760,6 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
                continue;
           }
           
-          // --- Return ---
           if (line.startsWith('give ')) {
               const resMatch = line.match(/^give\s+(.+)$/);
               if (resMatch) {
@@ -838,13 +791,11 @@ export const executeJGAsync = async (input: string, version: JGVersion, callback
   return !hasError;
 };
 
-// Deprecated
 export const executeJG = (input: string, version: JGVersion = 'v0', stdIn: string = ""): any => {
     throw new Error("Use executeJGAsync");
 };
 
 export const transpileJGtoPython = async (input: string, version: JGVersion): Promise<string> => {
-    // FIX: Always use process.env.API_KEY exclusively as per guidelines.
     const apiKey = process.env.API_KEY;
 
     if (!apiKey) {
@@ -853,7 +804,6 @@ export const transpileJGtoPython = async (input: string, version: JGVersion): Pr
 
     try {
         const ai = new GoogleGenAI({ apiKey: apiKey });
-        // Switched to 'gemini-3-flash-preview' as per model selection guidelines for general text tasks
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
             contents: `Translate the following JulyGod (JG) source code into Python 3.
@@ -876,7 +826,7 @@ export const transpileJGtoPython = async (input: string, version: JGVersion): Pr
                 - 'convert x to int' -> 'int(x)'
                 
                 GENERAL RULES:
-                1. 'use library original' -> ignore.
+                1. 'use library original' -> mandatory for V0.1 and V1.0. Error if missing in these versions.
                 2. 'start program' ... 'end program' -> 'if __name__ == "__main__":'
                 3. 'repeat N times' -> 'for _ in range(N):'
                 4. 'say "msg"' -> 'print("msg")'
@@ -887,7 +837,6 @@ export const transpileJGtoPython = async (input: string, version: JGVersion): Pr
             }
         });
 
-        // FIX: Extract text using the .text property (not a method) as per guidelines
         let text = response.text || "";
         text = text.replace(/^```python\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '');
         return text;

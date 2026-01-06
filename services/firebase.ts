@@ -1,3 +1,4 @@
+
 import { initializeApp, getApps } from "firebase/app";
 import { 
     getAuth, 
@@ -18,13 +19,21 @@ import {
     arrayUnion,
     collection,
     addDoc,
+    getDocs,
+    query,
+    orderBy,
     serverTimestamp,
     DocumentSnapshot,
     FirestoreError,
-    deleteField
+    deleteField,
+    deleteDoc,
+    where
 } from "firebase/firestore";
 
 export type JGVersion = 'v0' | 'v0.1-remastered' | 'v1.0' | 'v1.1' | 'v1.2';
+const ADMIN_EMAIL = "Divitbansal016@gmail.com";
+const ADMIN_PASSWORD_DEFAULT = "Divit142637";
+const ADMIN_NAME_DEFAULT = "DivitIndia(Owner)";
 
 const firebaseConfig: any = {
   apiKey: "AIzaSyAtXl2LvN2i2o3CczXRh7Yv1-Ugxfeg8jU",
@@ -51,6 +60,16 @@ if (firebaseConfig.apiKey) {
     }
 }
 
+export interface NewsItem {
+    id?: string;
+    title: string;
+    description: string;
+    tag: string;
+    icon: string;
+    fullArticle?: string; // New field for long-form content
+    date: any;
+}
+
 export interface UserProfile {
     uid: string;
     email: string;
@@ -58,6 +77,9 @@ export interface UserProfile {
     unlockedVersions: JGVersion[];
     trials: Record<string, string>;
     systemMessage?: string;
+    isBanned?: boolean;
+    banReason?: string;
+    banDate?: string;
     pendingRequests: {
         version: JGVersion;
         utr: string;
@@ -74,15 +96,23 @@ const generateRedeemCode = () => {
 
 export const authService = {
     isDemo: () => isDemoMode,
+    isAdmin: (user: User | null) => user?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase(),
     signUp: async (email: string, pass: string, name: string) => {
         if (isDemoMode) return null;
+        
+        if (email.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+            if (name.toLowerCase().includes('divitindia') || name.toLowerCase().includes('owner')) {
+                throw new Error("This username is reserved for the Owner.");
+            }
+        }
+
         const cred = await createUserWithEmailAndPassword(auth, email, pass);
         if (cred.user) {
             await updateProfile(cred.user, { displayName: name });
             await setDoc(doc(db, "users", cred.user.uid), {
-                email,
+                email: email.toLowerCase(),
                 displayName: name,
-                unlockedVersions: ['v0.1-remastered'],
+                unlockedVersions: email.toLowerCase() === ADMIN_EMAIL.toLowerCase() ? ['v0', 'v0.1-remastered', 'v1.0', 'v1.1', 'v1.2'] : ['v0.1-remastered'],
                 trials: {},
                 createdAt: serverTimestamp()
             });
@@ -91,7 +121,14 @@ export const authService = {
     },
     signIn: async (email: string, pass: string) => {
         if (isDemoMode) return null;
-        return await signInWithEmailAndPassword(auth, email, pass);
+        try {
+            return await signInWithEmailAndPassword(auth, email.toLowerCase(), pass);
+        } catch (err: any) {
+            if (email.toLowerCase() === ADMIN_EMAIL.toLowerCase() && pass === ADMIN_PASSWORD_DEFAULT && (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential')) {
+                return await authService.signUp(email, pass, ADMIN_NAME_DEFAULT);
+            }
+            throw err;
+        }
     },
     signOut: async () => {
         if (isDemoMode) return;
@@ -106,20 +143,93 @@ export const authService = {
 };
 
 export const dbService = {
+    // --- News Operations ---
+    subscribeToNews: (onUpdate: (news: NewsItem[]) => void) => {
+        if (isDemoMode) return () => {};
+        return onSnapshot(query(collection(db, "news"), orderBy("date", "desc")), (snap) => {
+            const news = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as NewsItem));
+            onUpdate(news);
+        });
+    },
+
+    addNews: async (news: Omit<NewsItem, 'date'>) => {
+        if (isDemoMode) return;
+        await addDoc(collection(db, "news"), {
+            ...news,
+            date: serverTimestamp()
+        });
+    },
+
+    deleteNews: async (id: string) => {
+        if (isDemoMode) return;
+        await deleteDoc(doc(db, "news", id));
+    },
+
+    // --- Admin User Management ---
+    getAllUsers: async () => {
+        if (isDemoMode) return [];
+        const snap = await getDocs(collection(db, "users"));
+        return snap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile));
+    },
+
+    updateUserPermissions: async (targetUid: string, versions: JGVersion[]) => {
+        if (isDemoMode) return;
+        const userRef = doc(db, "users", targetUid);
+        await updateDoc(userRef, { unlockedVersions: versions });
+    },
+
+    banUser: async (targetUid: string, reason: string, daysDelay: number = 3) => {
+        if (isDemoMode) return;
+        const userRef = doc(db, "users", targetUid);
+        const banDate = new Date();
+        banDate.setDate(banDate.getDate() + daysDelay);
+        
+        await updateDoc(userRef, {
+            isBanned: true,
+            banReason: reason,
+            banDate: banDate.toISOString(),
+            systemMessage: `CRITICAL: Your account is scheduled for suspension in ${daysDelay} days. Reason: ${reason}`
+        });
+    },
+
+    unbanUser: async (targetUid: string) => {
+        if (isDemoMode) return;
+        const userRef = doc(db, "users", targetUid);
+        await updateDoc(userRef, {
+            isBanned: false,
+            banReason: deleteField(),
+            banDate: deleteField(),
+            systemMessage: "Your account suspension has been lifted by the Owner."
+        });
+    },
+
+    // Centralized Control: Admin approves payment manually
     adminUnlockVersion: async (adminUid: string, targetUid: string, version: JGVersion) => {
         if (isDemoMode) throw new Error("Demo Mode");
         const userRef = doc(db, "users", targetUid);
         const userSnap = await getDoc(userRef);
         if (!userSnap.exists()) throw new Error(`User not found.`);
         const userData = userSnap.data();
+        
+        // Remove from user's internal pending list
         const pending = userData.pendingRequests || [];
         const updatedPending = pending.filter((p: any) => p.version !== version);
+        
+        // Add to unlocked list
         const updatedUnlocked = Array.from(new Set([...(userData.unlockedVersions || []), version]));
+        
         await updateDoc(userRef, {
             unlockedVersions: updatedUnlocked,
             pendingRequests: updatedPending,
-            systemMessage: deleteField() // Clear any existing rejection messages on success
+            systemMessage: `Access to ${version.toUpperCase()} has been GRANTED by the Admin. Thank you for your payment!`
         });
+
+        // Delete from central payment_requests collection
+        const requestsSnap = await getDocs(query(collection(db, "payment_requests"), where("uid", "==", targetUid), where("version", "==", version)));
+        for (const d of requestsSnap.docs) {
+            await deleteDoc(d.ref);
+        }
+
         return true;
     },
 
@@ -129,13 +239,21 @@ export const dbService = {
         const userSnap = await getDoc(userRef);
         if (!userSnap.exists()) throw new Error(`User not found.`);
         const userData = userSnap.data();
+        
         const pending = userData.pendingRequests || [];
         const updatedPending = pending.filter((p: any) => p.version !== version);
         
         await updateDoc(userRef, {
             pendingRequests: updatedPending,
-            systemMessage: `The transaction for ${version.toUpperCase()} was marked as invalid/fake. Please contact divitbansal016@gmail.com for support.`
+            systemMessage: `The transaction for ${version.toUpperCase()} was REJECTED by the Admin. Reason: UTR not verified. Please contact support.`
         });
+
+        // Delete from central collection
+        const requestsSnap = await getDocs(query(collection(db, "payment_requests"), where("uid", "==", targetUid), where("version", "==", version)));
+        for (const d of requestsSnap.docs) {
+            await deleteDoc(d.ref);
+        }
+
         return true;
     },
 
@@ -208,12 +326,14 @@ export const dbService = {
             case 'v1.2': price = "1400"; break;
         }
 
+        // 1. Log in centralized admin ledger
         await addDoc(collection(db, "payment_requests"), {
             uid, username, version, utr, price, redeemCode,
             status: 'pending',
             createdAt: serverTimestamp()
         });
 
+        // 2. Log in user's internal record
         const userRef = doc(db, "users", uid);
         await setDoc(userRef, {
             pendingRequests: arrayUnion({

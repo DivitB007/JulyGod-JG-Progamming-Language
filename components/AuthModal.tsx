@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { X, Mail, Lock, User, Loader2, AlertCircle, Database, ExternalLink, ArrowRight } from 'lucide-react';
 import { authService } from '../services/firebase';
@@ -46,13 +47,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
             let type: 'error' | 'warning' = 'error';
             let action = undefined;
 
+            const errCode = err.code || '';
+            const errMsg = err.message || '';
+
             // 1. Custom Validation
-            if (err.message === "Name is required") {
+            if (errMsg === "Name is required") {
                 msg = "Please enter a username to continue.";
             }
             
-            // 2. Email Already Exists -> Offer Switch to Login
-            else if (err.code === 'auth/email-already-in-use') {
+            // 2. Email Already Exists
+            else if (errCode === 'auth/email-already-in-use') {
                 msg = "This email is already registered.";
                 type = 'warning';
                 action = {
@@ -60,49 +64,72 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
                     onClick: () => {
                         setIsSignUp(false);
                         setError(null);
-                        // Optional: keep email, clear password
                     }
                 };
             }
 
-            // 3. Firestore API Disabled -> Link to GCP Console
-            // Updated to catch "Firestore API data access is disabled" (which lacks "Cloud" in some contexts)
-            else if (err.code === 'permission-denied' || (err.message && err.message.includes('Firestore API'))) {
-                msg = "Firestore API is disabled. You need to enable it in the Google Cloud Console.";
+            // 3. Invalid Credentials (Generic in new Firebase Auth v10+)
+            else if (errCode === 'auth/invalid-credential' || errMsg.includes('auth/invalid-credential')) {
+                if (isSignUp) {
+                    msg = "We couldn't create your account with these credentials. Please check your email format or try a different email.";
+                } else {
+                    msg = "Incorrect email or password. Please try again or create a new account.";
+                    type = 'warning';
+                    action = {
+                        label: "Create new account instead",
+                        onClick: () => {
+                            setIsSignUp(true);
+                            setError(null);
+                        }
+                    };
+                }
+            }
+
+            // 4. Other specific codes
+            else if (errCode === 'auth/user-not-found' || errCode === 'auth/wrong-password') {
+                msg = "Invalid email or password. Don't have an account yet?";
                 type = 'warning';
                 action = {
-                    label: "Enable Firestore API",
-                    link: "https://console.developers.google.com/apis/api/firestore.googleapis.com/overview?project=july-god-programming-language"
+                    label: "Create new account instead",
+                    onClick: () => {
+                        setIsSignUp(true);
+                        setError(null);
+                    }
+                };
+            }
+
+            // 5. Firestore API Disabled -> Link to GCP Console
+            else if (errCode === 'permission-denied' || errMsg.includes('Firestore API')) {
+                msg = "Database access is currently disabled. Please contact the administrator.";
+                type = 'error';
+                action = {
+                    label: "View Status",
+                    link: "https://console.firebase.google.com"
                 };
             }
             
-            // 4. Firebase Auth Not Enabled -> Link to Firebase Console
-            else if (err.code === 'auth/configuration-not-found' || err.code === 'auth/operation-not-allowed') {
-                msg = "Authentication is not enabled in Firebase Console.";
+            // 6. Firebase Auth Not Enabled -> Link to Firebase Console
+            else if (errCode === 'auth/configuration-not-found' || errCode === 'auth/operation-not-allowed') {
+                msg = "Authentication is not enabled for this project.";
                 type = 'warning';
                 action = {
-                    label: "Enable Email/Password",
-                    link: "https://console.firebase.google.com/u/0/project/july-god-programming-language/authentication/providers"
+                    label: "Open Firebase Console",
+                    link: "https://console.firebase.google.com"
                 };
             }
 
-            // 5. Unauthorized Domain (Netlify/Vercel)
-            else if (err.code === 'auth/unauthorized-domain') {
-                msg = "Domain not authorized. Add this URL to Firebase Auth settings.";
-                type = 'warning';
-                action = {
-                    label: "Add Domain to Auth",
-                    link: "https://console.firebase.google.com/u/0/project/july-god-programming-language/authentication/settings"
-                };
-            }
-
-            // 6. Standard Errors
-            else if (err.code === 'auth/weak-password') {
+            // 7. Standard Errors / Fallback
+            else if (errCode === 'auth/weak-password') {
                 msg = "Password is too weak. Use at least 6 characters.";
-            } else if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-                msg = "Invalid email or password.";
-            } else if (err.message) {
-                msg = err.message;
+            } else if (errMsg) {
+                // Cleaner raw error parsing
+                msg = errMsg
+                    .replace('Firebase: ', '')
+                    .replace(/Error \(auth\/(.+?)\)\.?/, '$1')
+                    .replace(/-/g, ' ');
+                
+                // Capitalize first letter
+                msg = msg.charAt(0).toUpperCase() + msg.slice(1);
             }
 
             setError({ message: msg, type, action });
@@ -113,7 +140,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="bg-jg-surface border border-jg-primary/30 rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden relative">
+            <div className="bg-jg-surface border border-jg-primary/30 rounded-2xl max-sm:max-w-xs max-w-sm w-full shadow-2xl overflow-hidden relative">
                 
                 {/* Header */}
                 <div className="p-6 bg-gradient-to-r from-gray-900 to-jg-surface border-b border-gray-700 flex justify-between items-start">
@@ -143,7 +170,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
                     ) : (
                          <div className="bg-green-500/10 border border-green-500/20 text-green-400 text-xs p-2 rounded flex items-center gap-2">
                             <Database className="w-3 h-3" />
-                            <strong>Connected:</strong> Real Database Active.
+                            <strong>Connected:</strong> Cloud Environment Active.
                         </div>
                     )}
 
@@ -194,10 +221,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
                     </div>
 
                     {error && (
-                        <div className={`flex items-start gap-2 text-xs p-3 rounded ${error.type === 'warning' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                        <div className={`flex items-start gap-2 text-xs p-3 rounded animate-in slide-in-from-top-2 duration-200 ${error.type === 'warning' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
                             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                             <div className="flex-1">
-                                <p className="leading-tight">{error.message}</p>
+                                <p className="leading-tight font-medium">{error.message}</p>
                                 
                                 {error.action && (
                                     <div className="mt-2">
