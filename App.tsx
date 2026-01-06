@@ -82,10 +82,19 @@ function App() {
                 (error) => {
                     // Error callback
                     console.error("App DB Error:", error);
-                    if (error.code === 'permission-denied' || (error.message && error.message.includes('Cloud Firestore API'))) {
+                    
+                    // Handle specifically "database not found" (supports default or named)
+                    if (error.message && error.message.includes('does not exist') && error.message.includes('database')) {
                         setDbError({
-                            message: "Firestore API is disabled. Data cannot be saved.",
-                            link: "https://console.developers.google.com/apis/api/firestore.googleapis.com/overview?project=july-god-programming-language"
+                            message: `Setup Required: Database '${dbService.getDatabaseId()}' not found.`,
+                            link: "https://console.firebase.google.com/project/july-god-programming-language/firestore"
+                        });
+                    }
+                    // Handle API disabled or RESTRICTED
+                    else if (error.code === 'permission-denied' || (error.message && error.message.includes('Firestore API'))) {
+                        setDbError({
+                            message: "API Key Restricted: Go to Credentials > API Key > Restrictions.",
+                            link: "https://console.cloud.google.com/apis/credentials?project=july-god-programming-language"
                         });
                     } else if (error.code === 'unavailable') {
                         setDbError({ message: "Network offline. Working in offline mode." });
@@ -128,15 +137,18 @@ function App() {
           try {
               await dbService.submitPayment(user.uid, version, utr, user.displayName || 'User');
           } catch (e: any) {
-              if (e.code === 'permission-denied' || e.message?.includes('Cloud Firestore API')) {
+              if (e.code === 'permission-denied' || e.message?.includes('Firestore API')) {
                    setDbError({
-                        message: "Firestore API Disabled. Cannot submit payment.",
-                        link: "https://console.developers.google.com/apis/api/firestore.googleapis.com/overview?project=july-god-programming-language"
+                        message: "API Key Restricted: Cannot submit. Check Credentials page.",
+                        link: "https://console.cloud.google.com/apis/credentials?project=july-god-programming-language"
                    });
-              } else {
-                  alert("Failed to submit request: " + e.message);
               }
+              // We re-throw the error here so the UI (Modal) can stop loading and show the error state.
+              throw e;
           }
+      } else {
+          // Should not happen, but safeguard
+          throw new Error("User not authenticated.");
       }
   };
 
@@ -227,7 +239,7 @@ function App() {
                                 rel="noopener noreferrer"
                                 className="px-4 py-2 bg-white text-red-900 text-xs font-bold rounded hover:bg-gray-100 transition-colors flex items-center gap-2"
                             >
-                                Enable API <ExternalLink className="w-3 h-3" />
+                                {dbError.message.includes('Database') ? 'Create Database' : 'Fix Credentials'} <ExternalLink className="w-3 h-3" />
                             </a>
                         )}
                         <button 

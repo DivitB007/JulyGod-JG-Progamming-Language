@@ -10,7 +10,7 @@ interface UnlockModalProps {
     version: JGVersion;
     isPending: boolean;
     onClose: () => void;
-    onSubmitRequest: (utr: string) => void;
+    onSubmitRequest: (utr: string) => Promise<void>;
 }
 
 export const UnlockModal: React.FC<UnlockModalProps> = ({ version, isPending, onClose, onSubmitRequest }) => {
@@ -19,9 +19,11 @@ export const UnlockModal: React.FC<UnlockModalProps> = ({ version, isPending, on
     const [error, setError] = useState('');
     const [step, setStep] = useState<'info' | 'payment'>('info');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    // Local success state ensures immediate feedback, even if DB listeners lag
+    const [localSuccess, setLocalSuccess] = useState(false);
 
-    // If already pending, show status immediately
-    if (isPending) {
+    // If already pending (from DB) or just submitted successfully (local), show status
+    if (isPending || localSuccess) {
         return (
             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
                 <div className="bg-jg-surface border border-yellow-500/50 rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl animate-in zoom-in duration-300 relative">
@@ -84,11 +86,24 @@ export const UnlockModal: React.FC<UnlockModalProps> = ({ version, isPending, on
         setIsSubmitting(true);
         setError('');
         
-        // Call Parent Handler (which calls Firebase)
-        setTimeout(() => {
-            onSubmitRequest(utr);
-            // No need to set submitting false, the component will likely unmount or change state
-        }, 1500);
+        try {
+            // Artificial delay to ensure user sees the "Submitting" state briefly
+            const minDelay = new Promise(resolve => setTimeout(resolve, 1500));
+            
+            await Promise.all([
+                onSubmitRequest(utr),
+                minDelay
+            ]);
+            
+            // Mark as locally successful to switch UI immediately
+            setLocalSuccess(true);
+            setIsSubmitting(false);
+            
+        } catch (err: any) {
+            console.error("Submission failed:", err);
+            setIsSubmitting(false);
+            setError(err.message || "Failed to submit request. Please try again.");
+        }
     };
 
     return (

@@ -58,6 +58,10 @@ const firebaseConfig: any = {
 // Admin Email for notifications
 const ADMIN_EMAIL = "Divitbansal016@gmail.com";
 
+// Configuration for Named Database
+// Firestore requires lowercase IDs.
+const DATABASE_ID = "divtindia"; 
+
 let auth: any;
 let db: any;
 let analytics: any;
@@ -68,7 +72,9 @@ if (firebaseConfig.apiKey) {
     try {
         const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
         auth = getAuth(app);
-        db = getFirestore(app);
+        
+        // Connect to the specific named database
+        db = getFirestore(app, DATABASE_ID);
         
         // Initialize Analytics if supported
         if (typeof window !== 'undefined') {
@@ -81,7 +87,7 @@ if (firebaseConfig.apiKey) {
         }
 
         isDemoMode = false;
-        console.log("🔥 Firebase: Connected to Real Database");
+        console.log(`🔥 Firebase: Connected to Database '${DATABASE_ID}'`);
     } catch (e) {
         console.error("Firebase Initialization Error:", e);
         isDemoMode = true;
@@ -173,6 +179,8 @@ export const authService = {
 };
 
 export const dbService = {
+    getDatabaseId: () => DATABASE_ID,
+
     // Submit a Payment Request to Real Firestore
     submitPayment: async (uid: string, version: JGVersion, utr: string, username: string) => {
         if (isDemoMode) {
@@ -181,6 +189,15 @@ export const dbService = {
             existing.push({ version, utr, date: new Date().toISOString() });
             localStorage.setItem(key, JSON.stringify(existing));
             return;
+        }
+
+        // Calculate Price for email
+        let price = "0";
+        switch(version) {
+            case 'v0': price = "20"; break;
+            case 'v1.0': price = "200"; break;
+            case 'v1.1': price = "800"; break;
+            case 'v1.2': price = "1400"; break;
         }
 
         try {
@@ -192,6 +209,7 @@ export const dbService = {
                 username,
                 version,
                 utr,
+                price,
                 status: 'pending',
                 createdAt: timestamp
             });
@@ -205,9 +223,11 @@ export const dbService = {
                     subject: `[JulyGod] New Unlock Request: ${username}`,
                     html: `
                         <h2>New Payment Verification Needed</h2>
-                        <p><strong>User:</strong> ${username} (${uid})</p>
-                        <p><strong>Version Requested:</strong> ${version}</p>
-                        <p><strong>UTR / Ref ID:</strong> ${utr}</p>
+                        <p><strong>User:</strong> ${username}</p>
+                        <p><strong>User ID:</strong> ${uid}</p>
+                        <p><strong>Model/Version Requested:</strong> ${version}</p>
+                        <p><strong>Amount Paid:</strong> ₹${price}</p>
+                        <p><strong>Transaction ID (UTR):</strong> ${utr}</p>
                         <hr/>
                         <p>Please verify the payment in your dashboard or bank account.</p>
                     `
@@ -226,7 +246,8 @@ export const dbService = {
 
             if (analytics) logEvent(analytics, 'unlock_request', { version, utr });
         } catch (error: any) {
-             if (error.code === 'permission-denied' || error.message?.includes('Cloud Firestore API')) {
+             // Handle generic Firestore API disabled error
+             if (error.code === 'permission-denied' || error.message?.includes('Firestore API')) {
                 console.error("🚨 Firestore API Error caught in submitPayment");
                 throw error; // Re-throw to be caught by UI
             }
@@ -270,7 +291,7 @@ export const dbService = {
             (error: FirestoreError) => {
                  if (onError) onError(error);
 
-                 if (error.code === 'permission-denied' || error.message?.includes('Cloud Firestore API')) {
+                 if (error.code === 'permission-denied' || error.message?.includes('Firestore API')) {
                     console.warn(`⚠️ FIRESTORE DISABLED: The Cloud Firestore API is not enabled.`);
                 } else {
                     console.error("🔥 Firestore Listen Error:", error);
