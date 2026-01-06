@@ -66,7 +66,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
             }
 
             // 3. Firestore API Disabled -> Link to GCP Console
-            else if (err.code === 'permission-denied' || (err.message && err.message.includes('Cloud Firestore API'))) {
+            // Updated to catch "Firestore API data access is disabled" (which lacks "Cloud" in some contexts)
+            else if (err.code === 'permission-denied' || (err.message && err.message.includes('Firestore API'))) {
                 msg = "Firestore API is disabled. You need to enable it in the Google Cloud Console.";
                 type = 'warning';
                 action = {
@@ -85,7 +86,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
                 };
             }
 
-            // 5. Standard Errors
+            // 5. Unauthorized Domain (Netlify/Vercel)
+            else if (err.code === 'auth/unauthorized-domain') {
+                msg = "Domain not authorized. Add this URL to Firebase Auth settings.";
+                type = 'warning';
+                action = {
+                    label: "Add Domain to Auth",
+                    link: "https://console.firebase.google.com/u/0/project/july-god-programming-language/authentication/settings"
+                };
+            }
+
+            // 6. Standard Errors
             else if (err.code === 'auth/weak-password') {
                 msg = "Password is too weak. Use at least 6 characters.";
             } else if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {

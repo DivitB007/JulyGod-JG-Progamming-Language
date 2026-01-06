@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
-import { X, Lock, ShieldCheck, CheckCircle, Smartphone, ArrowLeft, QrCode, ExternalLink, Loader2, Clock, Send } from 'lucide-react';
+import { X, Lock, ShieldCheck, CheckCircle, Smartphone, ArrowLeft, QrCode, ExternalLink, Loader2, Clock, Send, Mail } from 'lucide-react';
 import { JGVersion } from '../App';
+import { authService, dbService } from '../services/firebase';
+import { emailService } from '../services/emailService';
 
 // --- CONFIGURATION ---
 const YOUR_FAMPAY_ID = "username@fam"; 
 const YOUR_NAME = "JulyGod Admin"; 
+const ADMIN_EMAIL = "Divitbansal016@gmail.com";
 
 interface UnlockModalProps {
     version: JGVersion;
@@ -21,9 +24,31 @@ export const UnlockModal: React.FC<UnlockModalProps> = ({ version, isPending, on
     const [isSubmitting, setIsSubmitting] = useState(false);
     // Local success state ensures immediate feedback, even if DB listeners lag
     const [localSuccess, setLocalSuccess] = useState(false);
+    const [emailSent, setEmailSent] = useState(false);
+
+    const getNumericPrice = () => {
+        if (version === 'v0') return 20;
+        if (version === 'v1.0') return 200;
+        if (version === 'v1.1') return 800;
+        if (version === 'v1.2') return 1400;
+        return 0;
+    };
+
+    const getVersionName = () => {
+        if (version === 'v0') return 'V0 Legacy';
+        if (version === 'v1.0') return 'V1.0 Stable';
+        if (version === 'v1.1') return 'V1.1 Interactive';
+        if (version === 'v1.2') return 'V1.2 Final';
+        return '';
+    };
 
     // If already pending (from DB) or just submitted successfully (local), show status
     if (isPending || localSuccess) {
+        // Construct Mailto Link for manual fallback
+        const subject = encodeURIComponent(`[JulyGod] Payment Verification: ${getVersionName()}`);
+        const body = encodeURIComponent(`Hello Admin,\n\nI have submitted a payment request.\n\nVersion: ${getVersionName()}\nAmount: ₹${getNumericPrice()}\nUTR/Ref: ${utr || '(See Database)'}\n\nPlease verify and unlock my account.\n\nThanks.`);
+        const mailtoLink = `mailto:${ADMIN_EMAIL}?subject=${subject}&body=${body}`;
+
         return (
             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
                 <div className="bg-jg-surface border border-yellow-500/50 rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl animate-in zoom-in duration-300 relative">
@@ -34,37 +59,36 @@ export const UnlockModal: React.FC<UnlockModalProps> = ({ version, isPending, on
                         <Clock className="w-8 h-8 text-yellow-500" />
                     </div>
                     <h3 className="text-xl font-bold text-white mb-2">Verification Pending</h3>
-                    <p className="text-sm text-gray-400 leading-relaxed mb-4">
+                    <p className="text-sm text-gray-400 leading-relaxed mb-6">
                         We have received your payment details. The admin is verifying the transaction ID <strong>(UTR)</strong>.
                     </p>
-                    <div className="bg-gray-800 rounded p-3 text-xs text-gray-500">
-                        Estimated time: <span className="text-white font-semibold">1 month or 2 months (rarely)</span>.
-                        <br/>
-                        <br/>
-                        The feature will unlock <strong>automatically</strong> here once approved. You will also receive an email at <strong>Divitbansal016@gmail.com</strong> (Admin).
+                    
+                    <div className="space-y-3">
+                         {emailSent ? (
+                            <div className="w-full py-2 px-4 bg-green-900/30 border border-green-500/50 rounded-lg text-sm text-green-400 font-medium flex items-center justify-center gap-2">
+                                <CheckCircle className="w-4 h-4" /> Email Sent Automatically
+                            </div>
+                         ) : (
+                            <a 
+                                href={mailtoLink}
+                                className="w-full py-2 px-4 bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded-lg text-sm text-blue-400 font-medium flex items-center justify-center gap-2 transition-all hover:border-blue-500 hover:text-blue-300"
+                            >
+                                <Mail className="w-4 h-4" /> Send Verification Email Manually
+                            </a>
+                         )}
+                        
+                        <div className="bg-gray-900/50 rounded p-3 text-xs text-gray-500 border border-gray-800">
+                            Estimated time: <span className="text-gray-300 font-semibold">1-2 hours</span>.
+                            <br/>
+                            This modal will close automatically when approved.
+                        </div>
                     </div>
                 </div>
             </div>
         );
     }
 
-    const getNumericPrice = () => {
-        if (version === 'v0') return 20;
-        if (version === 'v1.0') return 200;
-        if (version === 'v1.1') return 800;
-        if (version === 'v1.2') return 1400;
-        return 0;
-    };
-
     const getPriceDisplay = () => `₹${getNumericPrice()}`;
-
-    const getVersionName = () => {
-        if (version === 'v0') return 'V0 Legacy';
-        if (version === 'v1.0') return 'V1.0 Stable';
-        if (version === 'v1.1') return 'V1.1 Interactive';
-        if (version === 'v1.2') return 'V1.2 Final';
-        return '';
-    };
 
     const generateUPILink = () => {
         const amount = getNumericPrice();
@@ -87,15 +111,29 @@ export const UnlockModal: React.FC<UnlockModalProps> = ({ version, isPending, on
         setError('');
         
         try {
-            // Artificial delay to ensure user sees the "Submitting" state briefly
-            const minDelay = new Promise(resolve => setTimeout(resolve, 1500));
+            // 1. Submit to Firestore
+            await onSubmitRequest(utr);
+
+            // 2. Try Automatic Email
+            const uid = authService.getCurrentUid();
+            let currentUser = null;
+            if (uid) {
+                currentUser = await dbService.getUserProfile(uid);
+            }
             
-            await Promise.all([
-                onSubmitRequest(utr),
-                minDelay
-            ]);
+            const username = currentUser?.displayName || 'Unknown User';
             
-            // Mark as locally successful to switch UI immediately
+            const sent = await emailService.sendUnlockRequest(
+                username, 
+                uid || 'N/A', 
+                version, 
+                getNumericPrice().toString(), 
+                utr
+            );
+            
+            if (sent) setEmailSent(true);
+
+            // 3. Mark success
             setLocalSuccess(true);
             setIsSubmitting(false);
             

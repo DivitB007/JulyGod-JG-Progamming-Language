@@ -6,8 +6,9 @@ import { Documentation } from './components/Documentation';
 import { Footer } from './components/Footer';
 import { UnlockModal } from './components/UnlockModal';
 import { AuthModal } from './components/AuthModal';
+import { EmailConfigModal } from './components/EmailConfigModal';
 import { authService, dbService } from './services/firebase';
-import { AlertTriangle, ExternalLink, X } from 'lucide-react';
+import { AlertTriangle, ExternalLink, X, ShieldAlert } from 'lucide-react';
 
 export type JGVersion = 'v0' | 'v0.1-remastered' | 'v1.0' | 'v1.1' | 'v1.2';
 
@@ -42,9 +43,10 @@ function App() {
   const [unlockedVersions, setUnlockedVersions] = useState<JGVersion[]>(['v0.1-remastered']);
   const [pendingRequests, setPendingRequests] = useState<{version: JGVersion, utr: string}[]>([]);
   const [showUnlockModal, setShowUnlockModal] = useState<JGVersion | null>(null);
+  const [showEmailConfig, setShowEmailConfig] = useState(false);
   
   // Global System Status
-  const [dbError, setDbError] = useState<{message: string, link?: string} | null>(null);
+  const [dbError, setDbError] = useState<{message: string, link?: string, type?: 'error'|'warning'|'rules'} | null>(null);
 
   // Initialize Auth Listener & Real-time DB Listener
   useEffect(() => {
@@ -83,21 +85,37 @@ function App() {
                     // Error callback
                     console.error("App DB Error:", error);
                     
-                    // Handle specifically "database not found" (supports default or named)
-                    if (error.message && error.message.includes('does not exist') && error.message.includes('database')) {
-                        setDbError({
-                            message: `Setup Required: Database '${dbService.getDatabaseId()}' not found.`,
-                            link: "https://console.firebase.google.com/project/july-god-programming-language/firestore"
+                    const errMsg = error.message || '';
+                    
+                    // 1. Handle Rules Locked (Permission Denied)
+                    if (error.code === 'permission-denied') {
+                        // Check if it's explicitly API disabled or just rules
+                        if (errMsg.includes('Firestore API') || errMsg.includes('disabled')) {
+                             setDbError({
+                                message: "Firestore API is disabled in Cloud Console.",
+                                link: "https://console.developers.google.com/apis/api/firestore.googleapis.com/overview?project=july-god-programming-language",
+                                type: 'error'
+                            });
+                        } else {
+                            // This is the common "Missing or insufficient permissions" error -> RULES LOCKED
+                            setDbError({
+                                message: "Database is Locked. You must Publish Security Rules in Firebase Console.",
+                                link: "https://console.firebase.google.com/project/july-god-programming-language/firestore/rules",
+                                type: 'rules'
+                            });
+                        }
+                    }
+                    // 2. Handle DB Missing (Default/MongoDB mismatch)
+                    else if (error.code === 'not-found' || errMsg.includes('does not exist')) {
+                         setDbError({
+                            message: "Database not found or in wrong mode. Create '(default)' in Native Mode.",
+                            link: "https://console.firebase.google.com/project/july-god-programming-language/firestore",
+                            type: 'error'
                         });
                     }
-                    // Handle API disabled or RESTRICTED
-                    else if (error.code === 'permission-denied' || (error.message && error.message.includes('Firestore API'))) {
-                        setDbError({
-                            message: "API Key Restricted: Go to Credentials > API Key > Restrictions.",
-                            link: "https://console.cloud.google.com/apis/credentials?project=july-god-programming-language"
-                        });
-                    } else if (error.code === 'unavailable') {
-                        setDbError({ message: "Network offline. Working in offline mode." });
+                    // 3. Network / Offline
+                    else if (error.code === 'unavailable') {
+                        setDbError({ message: "Network offline. Working in offline mode.", type: 'warning' });
                     }
                 }
             );
@@ -137,17 +155,31 @@ function App() {
           try {
               await dbService.submitPayment(user.uid, version, utr, user.displayName || 'User');
           } catch (e: any) {
-              if (e.code === 'permission-denied' || e.message?.includes('Firestore API')) {
+              const errMsg = e.message || '';
+              if (e.code === 'permission-denied') {
+                   if (errMsg.includes('Firestore API')) {
+                        setDbError({
+                            message: "Firestore API is disabled.",
+                            link: "https://console.developers.google.com/apis/api/firestore.googleapis.com/overview?project=july-god-programming-language",
+                            type: 'error'
+                        });
+                   } else {
+                        setDbError({
+                            message: "Security Rules blocked this request. Check Firebase Console.",
+                            link: "https://console.firebase.google.com/project/july-god-programming-language/firestore/rules",
+                            type: 'rules'
+                        });
+                   }
+              } else if (e.code === 'not-found') {
                    setDbError({
-                        message: "API Key Restricted: Cannot submit. Check Credentials page.",
-                        link: "https://console.cloud.google.com/apis/credentials?project=july-god-programming-language"
+                        message: "Database missing. Create '(default)' DB in Firebase.",
+                        link: "https://console.firebase.google.com/project/july-god-programming-language/firestore",
+                        type: 'error'
                    });
               }
-              // We re-throw the error here so the UI (Modal) can stop loading and show the error state.
               throw e;
           }
       } else {
-          // Should not happen, but safeguard
           throw new Error("User not authenticated.");
       }
   };
@@ -179,6 +211,10 @@ function App() {
                 onSuccess={() => setShowAuthModal(false)}
             />
         )}
+        
+        {showEmailConfig && (
+            <EmailConfigModal onClose={() => setShowEmailConfig(false)} />
+        )}
 
         {showUnlockModal && (
             <UnlockModal 
@@ -194,7 +230,8 @@ function App() {
             <div className="animate-fade-in">
               <Hero 
                 onGetStarted={() => setView('playground')} 
-                onReadDocs={() => setView('docs')} 
+                onReadDocs={() => setView('docs')}
+                onOpenEmailConfig={() => setShowEmailConfig(true)}
               />
             </div>
           )}
@@ -220,15 +257,25 @@ function App() {
         
         {/* Global System Error Banner */}
         {dbError && (
-            <div className="fixed bottom-0 left-0 right-0 bg-red-900/95 backdrop-blur-md border-t border-red-500 p-4 z-[100] shadow-2xl animate-in slide-in-from-bottom-5 duration-300">
+            <div className={`fixed bottom-0 left-0 right-0 backdrop-blur-md border-t p-4 z-[100] shadow-2xl animate-in slide-in-from-bottom-5 duration-300 ${
+                dbError.type === 'rules' 
+                ? 'bg-yellow-900/95 border-yellow-500' 
+                : 'bg-red-900/95 border-red-500'
+            }`}>
                 <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
                     <div className="flex items-center gap-3 text-white">
-                        <div className="p-2 bg-red-500/20 rounded-full animate-pulse">
-                            <AlertTriangle className="w-5 h-5 text-red-200" />
+                        <div className={`p-2 rounded-full animate-pulse ${
+                             dbError.type === 'rules' ? 'bg-yellow-500/20' : 'bg-red-500/20'
+                        }`}>
+                            {dbError.type === 'rules' ? <ShieldAlert className="w-5 h-5 text-yellow-200" /> : <AlertTriangle className="w-5 h-5 text-red-200" />}
                         </div>
                         <div>
-                            <p className="font-bold text-sm md:text-base">System Alert</p>
-                            <p className="text-xs md:text-sm text-red-100">{dbError.message}</p>
+                            <p className="font-bold text-sm md:text-base">
+                                {dbError.type === 'rules' ? 'Security Rules Locked' : 'System Alert'}
+                            </p>
+                            <p className={`text-xs md:text-sm ${
+                                dbError.type === 'rules' ? 'text-yellow-100' : 'text-red-100'
+                            }`}>{dbError.message}</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
@@ -237,14 +284,20 @@ function App() {
                                 href={dbError.link} 
                                 target="_blank" 
                                 rel="noopener noreferrer"
-                                className="px-4 py-2 bg-white text-red-900 text-xs font-bold rounded hover:bg-gray-100 transition-colors flex items-center gap-2"
+                                className={`px-4 py-2 text-xs font-bold rounded hover:bg-gray-100 transition-colors flex items-center gap-2 ${
+                                    dbError.type === 'rules' 
+                                    ? 'bg-yellow-100 text-yellow-900' 
+                                    : 'bg-white text-red-900'
+                                }`}
                             >
-                                {dbError.message.includes('Database') ? 'Create Database' : 'Fix Credentials'} <ExternalLink className="w-3 h-3" />
+                                {dbError.type === 'rules' ? 'Open Rules Tab' : 'Fix Issue'} <ExternalLink className="w-3 h-3" />
                             </a>
                         )}
                         <button 
                             onClick={() => setDbError(null)}
-                            className="p-2 hover:bg-red-800 rounded-full text-red-200 hover:text-white transition-colors"
+                            className={`p-2 rounded-full transition-colors ${
+                                dbError.type === 'rules' ? 'hover:bg-yellow-800 text-yellow-200' : 'hover:bg-red-800 text-red-200'
+                            }`}
                         >
                             <X className="w-5 h-5" />
                         </button>

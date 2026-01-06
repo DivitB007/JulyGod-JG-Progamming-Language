@@ -30,19 +30,12 @@ export type JGVersion = 'v0' | 'v0.1-remastered' | 'v1.0' | 'v1.1' | 'v1.2';
 // --- SECURITY & SETUP INSTRUCTIONS ---
 /*
     1. FIREBASE CONSOLE SETUP:
-       - Go to Project Settings > General.
-       - Ensure these keys match your project.
+       - Go to Project Settings > General to find your keys.
+       - Ensure they are correct.
 
-    2. EMAIL AUTOMATION (The "Real" Way):
-       - Go to Firebase Console > Extensions.
-       - Install "Trigger Email" (by Twilio SendGrid or similar).
-       - Configure it to listen to the "mail" collection.
-       - This code writes to the "mail" collection automatically.
-
-    3. DATABASE SECURITY:
-       - Go to Firestore Database > Rules.
-       - Copy the rules from 'firestore.rules' in your project root.
-       - This ensures users can only read/write their own data.
+    2. DATABASE SETUP:
+       - Since you created the 'default' database, this code now automatically connects to it.
+       - If 'permission-denied' errors persist, enable the API in Google Cloud Console.
 */
 
 const firebaseConfig: any = {
@@ -58,10 +51,6 @@ const firebaseConfig: any = {
 // Admin Email for notifications
 const ADMIN_EMAIL = "Divitbansal016@gmail.com";
 
-// Configuration for Named Database
-// Firestore requires lowercase IDs.
-const DATABASE_ID = "divtindia"; 
-
 let auth: any;
 let db: any;
 let analytics: any;
@@ -73,8 +62,9 @@ if (firebaseConfig.apiKey) {
         const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
         auth = getAuth(app);
         
-        // Connect to the specific named database
-        db = getFirestore(app, DATABASE_ID);
+        // Connect to the DEFAULT database
+        // This connects to the '(default)' database you just created.
+        db = getFirestore(app);
         
         // Initialize Analytics if supported
         if (typeof window !== 'undefined') {
@@ -87,7 +77,7 @@ if (firebaseConfig.apiKey) {
         }
 
         isDemoMode = false;
-        console.log(`🔥 Firebase: Connected to Database '${DATABASE_ID}'`);
+        console.log(`🔥 Firebase: Connected to Default Database`);
     } catch (e) {
         console.error("Firebase Initialization Error:", e);
         isDemoMode = true;
@@ -175,11 +165,19 @@ export const authService = {
             };
         }
         return onAuthStateChanged(auth, callback);
+    },
+
+    getCurrentUid: () => {
+        if (isDemoMode) {
+            const stored = localStorage.getItem('jg_demo_user');
+            return stored ? JSON.parse(stored).uid : null;
+        }
+        return auth?.currentUser?.uid || null;
     }
 };
 
 export const dbService = {
-    getDatabaseId: () => DATABASE_ID,
+    getDatabaseId: () => '(default)',
 
     // Submit a Payment Request to Real Firestore
     submitPayment: async (uid: string, version: JGVersion, utr: string, username: string) => {
@@ -215,8 +213,6 @@ export const dbService = {
             });
 
             // 2. Add to 'mail' collection (For Firebase "Trigger Email" Extension)
-            // This is the "Real" email automation. If the extension is installed, 
-            // this doc creation will send an email to the admin.
             await addDoc(collection(db, "mail"), {
                 to: ADMIN_EMAIL,
                 message: {
@@ -235,19 +231,22 @@ export const dbService = {
             });
 
             // 3. Add to user profile for Real-time UI updates
+            // CRITICAL FIX: Use setDoc with merge: true instead of updateDoc.
+            // This ensures if the user doc was missing (due to previous DB errors), it gets created now.
             const userRef = doc(db, "users", uid);
-            await updateDoc(userRef, {
+            await setDoc(userRef, {
+                displayName: username, // Ensure basic info is present if doc is new
                 pendingRequests: arrayUnion({
                     version,
                     utr,
                     date: new Date().toISOString()
                 })
-            });
+            }, { merge: true });
 
             if (analytics) logEvent(analytics, 'unlock_request', { version, utr });
         } catch (error: any) {
              // Handle generic Firestore API disabled error
-             if (error.code === 'permission-denied' || error.message?.includes('Firestore API')) {
+             if (error.code === 'permission-denied' || error.message?.includes('Firestore API') || error.message?.includes('data access is disabled')) {
                 console.error("🚨 Firestore API Error caught in submitPayment");
                 throw error; // Re-throw to be caught by UI
             }
@@ -291,7 +290,7 @@ export const dbService = {
             (error: FirestoreError) => {
                  if (onError) onError(error);
 
-                 if (error.code === 'permission-denied' || error.message?.includes('Firestore API')) {
+                 if (error.code === 'permission-denied' || error.message?.includes('Firestore API') || error.message?.includes('data access is disabled')) {
                     console.warn(`⚠️ FIRESTORE DISABLED: The Cloud Firestore API is not enabled.`);
                 } else {
                     console.error("🔥 Firestore Listen Error:", error);
