@@ -1,15 +1,14 @@
 import React, { useState } from 'react';
-import { ArrowRight, BookOpen, Lock, AlertCircle, Layers, Key, Mail } from 'lucide-react';
+import { ArrowRight, BookOpen, Lock, AlertCircle, Layers, Key } from 'lucide-react';
 import { FEATURES } from '../constants';
 import { ApiKeyModal } from './ApiKeyModal';
 
 interface HeroProps {
     onGetStarted: () => void;
     onReadDocs: () => void;
-    onOpenEmailConfig?: () => void;
 }
 
-export const Hero: React.FC<HeroProps> = ({ onGetStarted, onReadDocs, onOpenEmailConfig }) => {
+export const Hero: React.FC<HeroProps> = ({ onGetStarted, onReadDocs }) => {
     const [showApiKeyModal, setShowApiKeyModal] = useState(false);
 
     // Icon mapping
@@ -70,16 +69,6 @@ export const Hero: React.FC<HeroProps> = ({ onGetStarted, onReadDocs, onOpenEmai
                         <Key className="w-4 h-4 mr-2 text-jg-accent group-hover:text-white transition-colors" />
                         Configure Gemini API
                     </button>
-                    
-                    {onOpenEmailConfig && (
-                        <button
-                            onClick={onOpenEmailConfig}
-                            className="group inline-flex items-center px-6 py-2 text-sm font-medium rounded-full text-jg-muted bg-gray-900/50 border border-gray-700 hover:border-purple-500 hover:text-white hover:bg-gray-800 transition-all duration-300 backdrop-blur-sm"
-                        >
-                            <Mail className="w-4 h-4 mr-2 text-purple-500 group-hover:text-white transition-colors" />
-                            Setup Email
-                        </button>
-                    )}
                 </div>
 
                 {/* Features Grid */}

@@ -6,7 +6,6 @@ import { Documentation } from './components/Documentation';
 import { Footer } from './components/Footer';
 import { UnlockModal } from './components/UnlockModal';
 import { AuthModal } from './components/AuthModal';
-import { EmailConfigModal } from './components/EmailConfigModal';
 import { authService, dbService } from './services/firebase';
 import { AlertTriangle, ExternalLink, X, ShieldAlert } from 'lucide-react';
 
@@ -43,7 +42,6 @@ function App() {
   const [unlockedVersions, setUnlockedVersions] = useState<JGVersion[]>(['v0.1-remastered']);
   const [pendingRequests, setPendingRequests] = useState<{version: JGVersion, utr: string}[]>([]);
   const [showUnlockModal, setShowUnlockModal] = useState<JGVersion | null>(null);
-  const [showEmailConfig, setShowEmailConfig] = useState(false);
   
   // Global System Status
   const [dbError, setDbError] = useState<{message: string, link?: string, type?: 'error'|'warning'|'rules'} | null>(null);
@@ -212,10 +210,6 @@ function App() {
             />
         )}
         
-        {showEmailConfig && (
-            <EmailConfigModal onClose={() => setShowEmailConfig(false)} />
-        )}
-
         {showUnlockModal && (
             <UnlockModal 
                 version={showUnlockModal} 
@@ -231,7 +225,6 @@ function App() {
               <Hero 
                 onGetStarted={() => setView('playground')} 
                 onReadDocs={() => setView('docs')}
-                onOpenEmailConfig={() => setShowEmailConfig(true)}
               />
             </div>
           )}

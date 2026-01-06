@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Lock, ShieldCheck, CheckCircle, Smartphone, ArrowLeft, QrCode, ExternalLink, Loader2, Clock, Send, Mail } from 'lucide-react';
+import { X, Lock, ShieldCheck, CheckCircle, Smartphone, ArrowLeft, QrCode, ExternalLink, Loader2, Clock, Send, Mail, AlertCircle } from 'lucide-react';
 import { JGVersion } from '../App';
 import { authService, dbService } from '../services/firebase';
 import { emailService } from '../services/emailService';
@@ -17,12 +17,10 @@ interface UnlockModalProps {
 }
 
 export const UnlockModal: React.FC<UnlockModalProps> = ({ version, isPending, onClose, onSubmitRequest }) => {
-    const [password, setPassword] = useState(''); // Kept for Admin backdoor if needed
     const [utr, setUtr] = useState('');
     const [error, setError] = useState('');
     const [step, setStep] = useState<'info' | 'payment'>('info');
     const [isSubmitting, setIsSubmitting] = useState(false);
-    // Local success state ensures immediate feedback, even if DB listeners lag
     const [localSuccess, setLocalSuccess] = useState(false);
     const [emailSent, setEmailSent] = useState(false);
 
@@ -42,9 +40,7 @@ export const UnlockModal: React.FC<UnlockModalProps> = ({ version, isPending, on
         return '';
     };
 
-    // If already pending (from DB) or just submitted successfully (local), show status
     if (isPending || localSuccess) {
-        // Construct Mailto Link for manual fallback
         const subject = encodeURIComponent(`[JulyGod] Payment Verification: ${getVersionName()}`);
         const body = encodeURIComponent(`Hello Admin,\n\nI have submitted a payment request.\n\nVersion: ${getVersionName()}\nAmount: ₹${getNumericPrice()}\nUTR/Ref: ${utr || '(See Database)'}\n\nPlease verify and unlock my account.\n\nThanks.`);
         const mailtoLink = `mailto:${ADMIN_EMAIL}?subject=${subject}&body=${body}`;
@@ -73,7 +69,7 @@ export const UnlockModal: React.FC<UnlockModalProps> = ({ version, isPending, on
                                 href={mailtoLink}
                                 className="w-full py-2 px-4 bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded-lg text-sm text-blue-400 font-medium flex items-center justify-center gap-2 transition-all hover:border-blue-500 hover:text-blue-300"
                             >
-                                <Mail className="w-4 h-4" /> Send Verification Email Manually
+                                <Mail className="w-4 h-4" /> Email Failed? Send Manually
                             </a>
                          )}
                         
@@ -111,36 +107,52 @@ export const UnlockModal: React.FC<UnlockModalProps> = ({ version, isPending, on
         setError('');
         
         try {
-            // 1. Submit to Firestore
-            await onSubmitRequest(utr);
-
-            // 2. Try Automatic Email
-            const uid = authService.getCurrentUid();
-            let currentUser = null;
-            if (uid) {
-                currentUser = await dbService.getUserProfile(uid);
+            // 1. Database Submission
+            let dbSuccess = false;
+            try {
+                await onSubmitRequest(utr);
+                dbSuccess = true;
+            } catch (dbErr: any) {
+                console.error("Database submission failed:", dbErr);
             }
-            
-            const username = currentUser?.displayName || 'Unknown User';
-            
-            const sent = await emailService.sendUnlockRequest(
-                username, 
-                uid || 'N/A', 
-                version, 
-                getNumericPrice().toString(), 
-                utr
-            );
-            
-            if (sent) setEmailSent(true);
 
-            // 3. Mark success
+            // 2. Email Notification
+            let emailSuccess = false;
+            try {
+                const uid = authService.getCurrentUid();
+                let username = 'Unknown User';
+                
+                if (uid) {
+                    const profile = await dbService.getUserProfile(uid);
+                    if (profile?.displayName) username = profile.displayName;
+                }
+
+                emailSuccess = await emailService.sendUnlockRequest(
+                    username, 
+                    uid || 'N/A', 
+                    version, 
+                    getNumericPrice().toString(), 
+                    utr
+                );
+                
+                if (emailSuccess) setEmailSent(true);
+            } catch (emailErr: any) {
+                console.error("Email service failed:", emailErr);
+                // If DB succeeded but email failed, we still count as a success (UI wise)
+                // But we store the error if BOTH fail
+                if (!dbSuccess) throw emailErr;
+            }
+
             setLocalSuccess(true);
-            setIsSubmitting(false);
             
         } catch (err: any) {
-            console.error("Submission failed:", err);
+            console.error("Unlock submission failed:", err);
+            // Instead of just err.message which might be [object Object] if not handled, 
+            // we use the message or a fallback string.
+            const errorMessage = typeof err === 'string' ? err : (err?.message || "An unexpected error occurred.");
+            setError(errorMessage);
+        } finally {
             setIsSubmitting(false);
-            setError(err.message || "Failed to submit request. Please try again.");
         }
     };
 
@@ -148,7 +160,6 @@ export const UnlockModal: React.FC<UnlockModalProps> = ({ version, isPending, on
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
             <div className="bg-jg-surface border border-gray-700 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden relative animate-in fade-in zoom-in duration-200">
                 
-                {/* Header */}
                 <div className="p-6 bg-gradient-to-r from-gray-900 to-jg-surface border-b border-gray-700 flex justify-between items-start">
                     <div>
                         <h3 className="text-xl font-bold text-white flex items-center gap-2">
@@ -168,7 +179,6 @@ export const UnlockModal: React.FC<UnlockModalProps> = ({ version, isPending, on
                 </div>
 
                 <div className="p-6">
-                    
                     {step === 'info' ? (
                         <div className="space-y-6">
                             <div className="text-center py-4 bg-gray-800/50 rounded-xl border border-dashed border-gray-600">
@@ -188,9 +198,7 @@ export const UnlockModal: React.FC<UnlockModalProps> = ({ version, isPending, on
                         </div>
                     ) : (
                         <div className="space-y-6 flex flex-col items-center">
-                            
-                            {/* QR Code Section */}
-                            <div className="bg-white p-3 rounded-xl shadow-inner relative">
+                            <div className="bg-white p-3 rounded-xl shadow-inner">
                                 <img 
                                     src={generateQRCodeURL()} 
                                     alt="UPI QR Code" 
@@ -240,7 +248,7 @@ export const UnlockModal: React.FC<UnlockModalProps> = ({ version, isPending, on
                                     {isSubmitting ? (
                                         <>
                                             <Loader2 className="w-5 h-5 animate-spin" />
-                                            Submitting Request...
+                                            Submitting...
                                         </>
                                     ) : (
                                         <>
@@ -250,8 +258,11 @@ export const UnlockModal: React.FC<UnlockModalProps> = ({ version, isPending, on
                                     )}
                                 </button>
                                 
-                                {error && step === 'payment' && (
-                                    <p className="text-red-400 text-xs text-center animate-pulse">{error}</p>
+                                {error && (
+                                    <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-xs flex items-start gap-2 animate-in slide-in-from-top-1">
+                                        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                                        <span>{error}</span>
+                                    </div>
                                 )}
                                 
                                 <p className="text-[10px] text-gray-500 text-center">

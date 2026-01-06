@@ -1,43 +1,76 @@
+
 import emailjs from '@emailjs/browser';
 import { JGVersion } from '../App';
 
-const STORAGE_KEY_SERVICE = 'jg_email_service_id';
-const STORAGE_KEY_TEMPLATE = 'jg_email_template_id';
-const STORAGE_KEY_PUBLIC = 'jg_email_public_key';
+// --- HARDCODED ADMIN CREDENTIALS ---
+// These are strictly managed here. No user-facing setup is required or allowed.
+const PUBLIC_KEY = "AR5KtQxb-EtsT_MTX";
+const TEMPLATE_ID = "template_a79gyow";
+const SERVICE_ID = "service_g7d8eur";
+const ADMIN_EMAIL = "Divitbansal016@gmail.com";
 
-export interface EmailConfig {
-    serviceId: string;
-    templateId: string;
-    publicKey: string;
-}
+// Initialize EmailJS immediately with the hardcoded Public Key
+emailjs.init(PUBLIC_KEY);
 
 export const emailService = {
-    // Save configuration
-    saveConfig: (config: EmailConfig) => {
-        localStorage.setItem(STORAGE_KEY_SERVICE, config.serviceId);
-        localStorage.setItem(STORAGE_KEY_TEMPLATE, config.templateId);
-        localStorage.setItem(STORAGE_KEY_PUBLIC, config.publicKey);
-        
-        // Initialize immediately
-        emailjs.init(config.publicKey);
+    /**
+     * Get the current EmailJS configuration from localStorage.
+     */
+    getConfig: () => {
+        const stored = localStorage.getItem('jg_emailjs_config');
+        return stored ? JSON.parse(stored) : null;
     },
 
-    // Get configuration
-    getConfig: (): EmailConfig | null => {
-        const s = localStorage.getItem(STORAGE_KEY_SERVICE);
-        const t = localStorage.getItem(STORAGE_KEY_TEMPLATE);
-        const p = localStorage.getItem(STORAGE_KEY_PUBLIC);
-        if (s && t && p) return { serviceId: s, templateId: t, publicKey: p };
-        return null;
+    /**
+     * Save the EmailJS configuration to localStorage.
+     */
+    saveConfig: (config: { serviceId: string; templateId: string; publicKey: string }) => {
+        localStorage.setItem('jg_emailjs_config', JSON.stringify(config));
     },
 
+    /**
+     * Remove the EmailJS configuration from localStorage.
+     */
     clearConfig: () => {
-        localStorage.removeItem(STORAGE_KEY_SERVICE);
-        localStorage.removeItem(STORAGE_KEY_TEMPLATE);
-        localStorage.removeItem(STORAGE_KEY_PUBLIC);
+        localStorage.removeItem('jg_emailjs_config');
     },
 
-    // Send Email
+    /**
+     * Sends a test email to the admin to verify connectivity.
+     */
+    sendTestEmail: async (): Promise<boolean> => {
+        // Use configured values if available, otherwise use defaults
+        const config = emailService.getConfig();
+        const s_id = config?.serviceId || SERVICE_ID;
+        const t_id = config?.templateId || TEMPLATE_ID;
+        const p_key = config?.publicKey || PUBLIC_KEY;
+
+        try {
+            const response = await emailjs.send(
+                s_id,
+                t_id,
+                {
+                    username: "Admin System Check",
+                    uid: "SYSTEM_INTERNAL",
+                    version: "V1.2 Final",
+                    price: "1400",
+                    utr: "000000000000",
+                    date: new Date().toLocaleString(),
+                    to_email: ADMIN_EMAIL,
+                },
+                p_key
+            );
+            return response.status === 200;
+        } catch (error: any) {
+            const msg = error?.text || error?.message || JSON.stringify(error);
+            console.error("EmailJS Test Failure:", error);
+            throw new Error(`EmailJS Error: ${msg}`);
+        }
+    },
+
+    /**
+     * Sends an unlock request to the admin with user and transaction details.
+     */
     sendUnlockRequest: async (
         username: string, 
         uid: string, 
@@ -45,40 +78,33 @@ export const emailService = {
         price: string, 
         utr: string
     ): Promise<boolean> => {
+        // Use configured values if available, otherwise use defaults
         const config = emailService.getConfig();
-        
-        if (!config) {
-            console.warn("EmailJS not configured.");
-            return false;
-        }
+        const s_id = config?.serviceId || SERVICE_ID;
+        const t_id = config?.templateId || TEMPLATE_ID;
+        const p_key = config?.publicKey || PUBLIC_KEY;
 
         try {
-            // Re-init to be safe
-            emailjs.init(config.publicKey);
-
-            const templateParams = {
-                username,
-                uid,
-                version,
-                price,
-                utr,
-                date: new Date().toLocaleString()
-            };
-
             const response = await emailjs.send(
-                config.serviceId,
-                config.templateId,
-                templateParams
+                s_id,
+                t_id,
+                {
+                    username,
+                    uid,
+                    version,
+                    price,
+                    utr,
+                    date: new Date().toLocaleString(),
+                    to_email: ADMIN_EMAIL,
+                },
+                p_key
             );
 
-            if (response.status === 200) {
-                console.log("SUCCESS! Email sent.");
-                return true;
-            }
-            return false;
-        } catch (error) {
-            console.error("FAILED to send email:", error);
-            return false;
+            return response.status === 200;
+        } catch (error: any) {
+            const msg = error?.text || error?.message || JSON.stringify(error);
+            console.error("Email send failed detailed:", error);
+            throw new Error(`EmailJS Error: ${msg}`);
         }
     }
 };
