@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { Playground } from './components/Playground';
@@ -74,6 +74,23 @@ function App() {
     return () => { unsubscribeAuth(); if (unsubscribeProfile) unsubscribeProfile(); };
   }, []);
 
+  // Compute Unlocked Status Reactively
+  const isVersionUnlocked = useMemo(() => (v: JGVersion) => {
+      // Free Versions
+      if (v === 'v1.0' || v === 'v0.1-remastered') return true;
+      
+      // Permanent Purchase
+      if (unlockedVersions.includes(v)) return true;
+      
+      // Active Trial Access
+      if (userProfile?.trials?.[v]) {
+          const expiry = new Date(userProfile.trials[v]);
+          return expiry.getTime() > Date.now();
+      }
+      
+      return false;
+  }, [unlockedVersions, userProfile]);
+
   // Remote Unlock Logic for Admin
   useEffect(() => {
     const handleUrlAction = async () => {
@@ -115,18 +132,6 @@ function App() {
     };
     handleUrlAction();
   }, [user]);
-
-  const isVersionUnlocked = (v: JGVersion) => {
-      if (unlockedVersions.includes(v)) return true;
-      if (v === 'v1.0') return true; // Keep free tier logic if any
-      
-      // Trial Logic
-      if (userProfile?.trials?.[v]) {
-          const expiry = new Date(userProfile.trials[v]);
-          return expiry > new Date();
-      }
-      return false;
-  };
 
   return (
     <div className="min-h-screen text-jg-text font-sans antialiased relative selection:bg-jg-accent selection:text-white">

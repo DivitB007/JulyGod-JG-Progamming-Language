@@ -33,12 +33,12 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
         }
     };
 
-    const isPermanent = (v: JGVersion) => unlockedVersions.includes(v) || v === 'v1.0' || v === 'v0.1-remastered';
+    const isPermanent = (v: JGVersion) => (unlockedVersions || []).includes(v) || v === 'v1.0' || v === 'v0.1-remastered';
 
     const getTrialRemainingDays = (v: JGVersion) => {
         if (!userProfile?.trials?.[v]) return null;
         const expiry = new Date(userProfile.trials[v]);
-        const diff = expiry.getTime() - new Date().getTime();
+        const diff = expiry.getTime() - Date.now();
         const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
         return days > 0 ? days : 0;
     };
@@ -86,7 +86,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, jgVersion,
                                 {trialDays}d TRIAL
                             </span>
                         )}
-                        {!owned && trialDays === 0 && (
+                        {!owned && trialDays === 0 && userProfile?.trials?.[v] && (
                             <span className="text-[9px] bg-red-500/10 text-red-400 px-1.5 py-0.5 rounded font-bold border border-red-500/30">
                                 EXPIRED
                             </span>
